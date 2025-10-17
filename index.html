@@ -1042,6 +1042,7 @@ var lastWPress = 0;
         var lastRegenTime = 0;
         var joystick = { up: false, down: false, left: false, right: false };
         var lastFrame = performance.now();
+        var lastMinimapUpdateTime = 0;
         var mouseLocked = false;
         var deathScreenShown = false;
         var isDying = false;
@@ -4126,7 +4127,6 @@ self.onmessage = async function(e) {
             this.laserChargeTime = 0;
             this.laserTarget = new THREE.Vector3();
             this.laserBeam = null;
-            console.log(`Mob created at ${x}, ${this.pos.y}, ${z}`);
         }
         Mob.prototype.update = function (dt) {
             if (!isHost) {
@@ -4217,7 +4217,7 @@ self.onmessage = async function(e) {
                         this.laserBeam = new THREE.Mesh(geometry, material);
                         scene.add(this.laserBeam);
                     }
-                    const start = this.pos.clone().add(new THREE.Vector3(0, 0.5, 0));
+                    const start = this.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0));
                     const end = this.laserTarget;
                     const distance = start.distanceTo(end);
                     this.laserBeam.scale.y = distance;
@@ -4345,7 +4345,6 @@ self.onmessage = async function(e) {
                 console.error("No seeded random generator provided for mob spawning.");
                 return;
             }
-            console.log(`Spawning ${count} mobs, aggressive: ${isAggressive}`);
 
             var loadedChunks = Array.from(chunkManager.chunks.keys());
             if (loadedChunks.length === 0) return;
@@ -5337,7 +5336,7 @@ self.onmessage = async function(e) {
                             }
 
                             if (mob.laserBeam) {
-                                const start = mob.pos.clone().add(new THREE.Vector3(0, 0.5, 0));
+                                const start = mob.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0));
                                 const end = mob.laserTarget;
                                 const distance = start.distanceTo(end);
                                 mob.laserBeam.scale.y = distance;
@@ -6952,7 +6951,10 @@ self.onmessage = async function(e) {
             if (deathScreenShown) {
                 mobs.forEach(function (m) { m.update(dt); });
                 updateSky(dt);
-                updateMinimap();
+                if (now - lastMinimapUpdateTime > 250) {
+                    updateMinimap();
+                    lastMinimapUpdateTime = now;
+                }
                 var scoreElement = document.getElementById('score');
                 if (scoreElement) scoreElement.innerText = player.score;
                 renderer.render(scene, camera);
@@ -7084,6 +7086,10 @@ self.onmessage = async function(e) {
                 chunkManager.update(player.x, player.z);
                 mobs.forEach(function (m) { m.update(dt); });
                 updateSky(dt);
+                if (now - lastMinimapUpdateTime > 250) {
+                    updateMinimap();
+                    lastMinimapUpdateTime = now;
+                }
 
                 // Make skybox elements follow the camera
                 if (stars) stars.position.copy(camera.position);
@@ -7109,7 +7115,7 @@ self.onmessage = async function(e) {
                     }
                     particleSystem.geometry.attributes.position.needsUpdate = true;
                 }
-                updateMinimap();
+
                 var posLabel = document.getElementById('posLabel');
                 if (posLabel) posLabel.innerText = Math.floor(player.x) + ', ' + Math.floor(player.y) + ', ' + Math.floor(player.z);
                 if (cameraMode === 'third') {
