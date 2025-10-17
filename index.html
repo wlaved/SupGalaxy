@@ -1293,23 +1293,14 @@ const BLOCKS = {
 };
 
 const BIOMES = [
-    { key: 'plains', temp: 0.5, moist: 0.5, palette: [2, 3, 4, 13, 15], heightScale: 0.8, roughness: 0.3, featureDensity: 0.05 },
-    { key: 'desert', temp: 0.9, moist: 0.1, palette: [5, 118, 4], heightScale: 0.6, roughness: 0.4, featureDensity: 0.02 },
-    { key: 'forest', temp: 0.6, moist: 0.8, palette: [2, 3, 14, 4], heightScale: 1.3, roughness: 0.4, featureDensity: 0.03 },
-    { key: 'snow', temp: 0.1, moist: 0.5, palette: [10, 17, 4], heightScale: 1.2, roughness: 0.5, featureDensity: 0.02 },
-    { key: 'mountain', temp: 0.3, moist: 0.3, palette: [4, 11, 3, 15, 1], heightScale: 10.5, roughness: 0.6, featureDensity: 0.01 },
-    { key: 'swamp', temp: 0.8, moist: 0.9, palette: [2, 3, 6, 14, 13], heightScale: 0.5, roughness: 0.2, featureDensity: 0.04 },
-    { key: 'volcano', temp: 0.9, moist: 0.5, palette: [4, 11, 1, 16, 119], heightScale: 2.0, roughness: 0.8, featureDensity: 0.01 },
-    { key: 'glowing_forest', temp: 0.5, moist: 0.8, palette: [7, 8, 111, 112, 113], heightScale: 1.5, roughness: 0.5, featureDensity: 0.1 }
+        { key: 'plains', palette: [2, 3, 4, 13, 15], heightScale: 0.8, roughness: 0.3, featureDensity: 0.05 },
+        { key: 'desert', palette: [5, 118, 4], heightScale: 0.6, roughness: 0.4, featureDensity: 0.02 },
+        { key: 'forest', palette: [2, 3, 14, 4], heightScale: 1.3, roughness: 0.4, featureDensity: 0.03 },
+        { key: 'snow', palette: [10, 17, 4], heightScale: 1.2, roughness: 0.5, featureDensity: 0.02 },
+        { key: 'mountain', palette: [4, 11, 3, 15, 1], heightScale: 10.5, roughness: 0.6, featureDensity: 0.01 },
+        { key: 'swamp', palette: [2, 3, 6, 14, 13], heightScale: 0.5, roughness: 0.2, featureDensity: 0.04 },
 ];
 
-const PLANET_THEMES = {
-    'terran': ['plains', 'forest', 'mountain', 'swamp'],
-    'arid': ['desert', 'plains', 'mountain'],
-    'ice': ['snow', 'mountain', 'ice'],
-    'volcanic': ['volcano', 'mountain', 'desert'],
-    'crystal': ['glowing_forest', 'mountain', 'plains']
-};
 function makeSeededRandom(seed) {
         var h = 2166136261 >>> 0;
         for (var i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619) >>> 0;
@@ -1342,59 +1333,14 @@ function makeNoise(seed) {
 }
 
 function fbm(noiseFn, x, y, oct, persistence) {
-    var sum = 0, amp = 1, freq = 1, max = 0;
-    for (var i = 0; i < oct; i++) {
-        sum += amp * noiseFn(x * freq, y * freq);
-        max += amp;
-        amp *= persistence;
-        freq *= 2;
-    }
-    return sum / max;
-}
-
-function makeNoise3D(seed) {
-    const perm = new Uint8Array(512);
-    const grad3 = [
-        [1, 1, 0], [-1, 1, 0], [1, -1, 0], [-1, -1, 0],
-        [1, 0, 1], [-1, 0, 1], [1, 0, -1], [-1, 0, -1],
-        [0, 1, 1], [0, -1, 1], [0, 1, -1], [0, -1, -1]
-    ];
-    const rnd = makeSeededRandom(seed);
-    for (let i = 0; i < 256; i++) perm[i] = i;
-    for (let i = 255; i > 0; i--) {
-        const j = Math.floor(rnd() * (i + 1));
-        [perm[i], perm[j]] = [perm[j], perm[i]];
-    }
-    for (let i = 0; i < 256; i++) perm[i + 256] = perm[i];
-
-    function dot(g, x, y, z) {
-        return g[0] * x + g[1] * y + g[2] * z;
-    }
-
-    function noise(x, y, z) {
-        const X = Math.floor(x) & 255;
-        const Y = Math.floor(y) & 255;
-        const Z = Math.floor(z) & 255;
-        x -= Math.floor(x);
-        y -= Math.floor(y);
-        z -= Math.floor(z);
-        const u = x * x * x * (x * (x * 6 - 15) + 10);
-        const v = y * y * y * (y * (y * 6 - 15) + 10);
-        const w = z * z * z * (z * (z * 6 - 15) + 10);
-        const A = perm[X] + Y;
-        const AA = perm[A] + Z;
-        const AB = perm[A + 1] + Z;
-        const B = perm[X + 1] + Y;
-        const BA = perm[B] + Z;
-        const BB = perm[B + 1] + Z;
-
-        return lerp(w, lerp(v, lerp(u, dot(grad3[perm[AA] % 12], x, y, z), dot(grad3[perm[BA] % 12], x - 1, y, z)),
-                                  lerp(u, dot(grad3[perm[AB] % 12], x, y - 1, z), dot(grad3[perm[BB] % 12], x - 1, y - 1, z))),
-                           lerp(v, lerp(u, dot(grad3[perm[AA + 1] % 12], x, y, z - 1), dot(grad3[perm[BA + 1] % 12], x - 1, y, z - 1)),
-                                  lerp(u, dot(grad3[perm[AB + 1] % 12], x, y - 1, z - 1), dot(grad3[perm[BB + 1] % 12], x - 1, y - 1, z - 1))));
-    }
-    function lerp(t, a, b) { return a + t * (b - a); }
-    return noise;
+        var sum = 0, amp = 1, freq = 1, max = 0;
+        for (var i = 0; i < oct; i++) {
+            sum += amp * noiseFn(x * freq, y * freq);
+            max += amp;
+            amp *= persistence;
+            freq *= 2;
+        }
+        return sum / max;
 }
 
 function placeTree(chunkData, lx, cy, lz, rnd) {
@@ -1439,138 +1385,69 @@ function placeCactus(chunkData, lx, cy, lz, rnd) {
         for (var i = 0; i < h; i++) if (cy + i < MAX_HEIGHT) chunkData[(cy + i) * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = 9;
 }
 
-function pickBiomeFromPool(pool, elevation, temp, moist) {
-    if (!pool || pool.length === 0) {
-        // Fallback to the first biome (plains) if the pool is empty to prevent crashes
-        return BIOMES.find(b => b.key === 'plains') || BIOMES[0];
-    }
-    let bestBiome = pool[0];
-    let minDiff = Infinity;
-
-    for (const biome of pool) {
-        const tempDiff = Math.abs(biome.temp - temp);
-        const moistDiff = Math.abs(biome.moist - moist);
-        // Elevation is also a factor, maybe mountains prefer higher elevations
-        const elevPref = (biome.key === 'mountain') ? (1.0 - elevation) * 0.5 : elevation * 0.2;
-        const diff = tempDiff + moistDiff + elevPref;
-
-        if (diff < minDiff) {
-            minDiff = diff;
-            bestBiome = biome;
-        }
-    }
-    return bestBiome;
+function pickBiome(n, biomes) {
+        if (n > 0.68) return biomes.find(b => b.key === 'snow') || biomes[0];
+        if (n < 0.25) return biomes.find(b => b.key === 'desert') || biomes[1];
+        if (n > 0.45) return biomes.find(b => b.key === 'forest') || biomes[2];
+        if (n > 0.60) return biomes.find(b => b.key === 'mountain') || biomes[4];
+        if (n < 0.35) return biomes.find(b => b.key === 'swamp') || biomes[5];
+        return biomes.find(b => b.key === 'plains') || biomes[0];
 }
 
 function generateChunkData(chunkKey) {
-    const worldSeed = chunkKey.split(':')[0];
-    const chunkRnd = makeSeededRandom(chunkKey);
-    const cx = parseInt(chunkKey.split(':')[1]);
-    const cz = parseInt(chunkKey.split(':')[2]);
+        const worldSeed = chunkKey.split(':')[0];
+        const biomeRnd = makeSeededRandom(worldSeed + '_biomes');
 
-    // Noise functions
-    const elevationNoise = makeNoise(worldSeed + '_elevation');
-    const temperatureNoise = makeNoise(worldSeed + '_temperature');
-    const precipitationNoise = makeNoise(worldSeed + '_precipitation');
-    const themeNoise = makeNoise(worldSeed + '_theme');
-    const ditherNoise = makeNoise(worldSeed + '_dither');
-    const noise3D = makeNoise3D(worldSeed + '_3d');
+        const modifiedBiomes = BIOMES.map(biome => ({
+            ...biome,
+            heightScale: Math.max(0.1, biome.heightScale + (biomeRnd() - 0.5) * biome.heightScale * 0.5),
+            roughness: Math.max(0.1, biome.roughness + (biomeRnd() - 0.5) * biome.roughness * 0.5),
+            featureDensity: Math.max(0.005, biome.featureDensity + (biomeRnd() - 0.5) * biome.featureDensity * 0.5)
+        }));
 
-    const chunkData = new Uint8Array(CHUNK_SIZE * MAX_HEIGHT * CHUNK_SIZE);
-    const baseX = cx * CHUNK_SIZE;
-    const baseZ = cz * CHUNK_SIZE;
+        const noise = makeNoise(worldSeed);
+        const blockNoise = makeNoise(worldSeed + '_block');
+        const chunkRnd = makeSeededRandom(chunkKey);
+        const cx = parseInt(chunkKey.split(':')[1]);
+        const cz = parseInt(chunkKey.split(':')[2]);
+        const chunkData = new Uint8Array(CHUNK_SIZE * MAX_HEIGHT * CHUNK_SIZE);
 
-    const themeKeys = Object.keys(PLANET_THEMES);
-
-    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
-        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
-            const wx = baseX + lx;
-            const wz = baseZ + lz;
-            const nx = (wx % MAP_SIZE) / MAP_SIZE;
-            const nz = (wz % MAP_SIZE) / MAP_SIZE;
-
-            // 1. Theme Selection with Dithering
-            const themeValue = fbm(themeNoise, nx * 0.1, nz * 0.1, 3, 0.5);
-            const primaryThemeIndex = Math.floor(themeValue * themeKeys.length);
-            const secondaryThemeIndex = (primaryThemeIndex + 1) % themeKeys.length;
-            const primaryTheme = PLANET_THEMES[themeKeys[primaryThemeIndex]] || [];
-            const secondaryTheme = PLANET_THEMES[themeKeys[secondaryThemeIndex]] || [];
-
-            const ditherValue = fbm(ditherNoise, nx * 2, nz * 2, 4, 0.6);
-            const biomePoolKeys = ditherValue > 0.55 ? [...primaryTheme, ...secondaryTheme] : primaryTheme;
-            const biomePool = BIOMES.filter(b => biomePoolKeys.includes(b.key));
-
-            if (biomePool.length === 0) {
-                // Fallback to a default biome to prevent a crash
-                 const fallbackBiome = BIOMES.find(b => b.key === 'plains');
-                 if(fallbackBiome) biomePool.push(fallbackBiome);
-            }
-
-            // 2. Biome & Height Calculation
-            const elevation = fbm(elevationNoise, nx * 0.5, nz * 0.5, 6, 0.5);
-            const temperature = fbm(temperatureNoise, nx * 0.3, nz * 0.3, 4, 0.6);
-            const precipitation = fbm(precipitationNoise, nx * 0.4, nz * 0.4, 5, 0.5);
-
-            const biome = pickBiomeFromPool(biomePool, elevation, temperature, precipitation);
-            let height = SEA_LEVEL + elevation * 80 * biome.heightScale;
-            height += fbm(elevationNoise, nx * 2, nz * 2, 4, 0.4) * 20 * biome.roughness;
-            height = Math.max(1, Math.min(MAX_HEIGHT - 1, Math.floor(height)));
-
-            // 3. Volcano Feature
-            if (biome.key === 'volcano') {
-                const volcanoNoise = fbm(elevationNoise, nx * 1.5, nz * 1.5, 3, 0.5);
-                if (volcanoNoise > 0.7) {
-                    const radius = (volcanoNoise - 0.7) * 200;
-                    const peakHeight = height + radius * 1.2;
-                    for (let y = height; y < peakHeight && y < MAX_HEIGHT; y++) {
-                        const r = radius * (1 - (y - height) / (peakHeight - height));
-                        if (Math.hypot(lx - 8, lz - 8) < r) {
-                            chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = 119; // Cobblestone
-                        }
+        var baseX = cx * CHUNK_SIZE;
+        var baseZ = cz * CHUNK_SIZE;
+        for (var lx = 0; lx < CHUNK_SIZE; lx++) {
+            for (var lz = 0; lz < CHUNK_SIZE; lz++) {
+                var wx = baseX + lx;
+                var wz = baseZ + lz;
+                var nx = (wx % MAP_SIZE) / MAP_SIZE * 10000;
+                var nz = (wz % MAP_SIZE) / MAP_SIZE * 10000;
+                var n = fbm(noise, nx * 0.005, nz * 0.005, 5, 0.6);
+                var biome = pickBiome(n, modifiedBiomes);
+                var heightScale = biome.heightScale;
+                var roughness = biome.roughness;
+                var height = Math.floor(n * 40 * heightScale + 8);
+                if (n > 0.7) height += Math.floor((n - 0.7) * 60 * heightScale);
+                var localN = fbm(noise, nx * 0.05, nz * 0.05, 4, 0.5);
+                height += Math.floor(localN * 15 * roughness);
+                height = Math.max(1, Math.min(MAX_HEIGHT - 1, height));
+                for (var y = 0; y <= height; y++) {
+                    var id = BLOCK_AIR;
+                    if (y === 0) id = 1;
+                    else if (y < height - 3) id = 4;
+                    else if (y < height) id = 3;
+                    else {
+                        var blockN = fbm(blockNoise, nx * 0.1, nz * 0.1, 3, 0.6);
+                        var paletteIndex = Math.floor(blockN * biome.palette.length);
+                        id = biome.palette[paletteIndex % biome.palette.length];
                     }
-                    const craterRadius = radius * 0.3;
-                    const craterDepth = peakHeight - 10;
-                     if (Math.hypot(lx - 8, lz - 8) < craterRadius) {
-                         for (let y = Math.floor(craterDepth); y < peakHeight; y++) {
-                             chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = 16; // Lava
-                         }
-                     }
-                    height = peakHeight -1; // Reset height to volcano top
-                }
-            }
-
-
-            // 4. Base Terrain and 3D Noise (Caves/Floating Islands)
-            for (let y = 0; y < MAX_HEIGHT; y++) {
-                const density3d = noise3D(nx * 10, y / 32, nz * 10);
-                let id = BLOCK_AIR;
-
-                if (y <= height && density3d > -0.2) { // Base terrain, carved by 3D noise
-                    if (y === 0) id = 1; // Bedrock
-                    else if (y < height - 4) id = 4; // Stone
-                    else if (y < height) id = 3; // Dirt
-                    else id = biome.palette[0]; // Top layer
-                } else if (y > 80 && density3d > 0.5) { // Floating islands
-                    id = biome.palette[chunkRnd() * biome.palette.length | 0];
-                }
-
-                if (id !== BLOCK_AIR) {
                     chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = id;
                 }
-            }
-
-            // 5. Water and Surface Features
-            for (let y = height + 1; y <= SEA_LEVEL; y++) {
-                chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = 6; // Water
-            }
-            if (chunkData[(height) * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] !== 6) {
-                 if (biome.key === 'forest' && chunkRnd() < biome.featureDensity) placeTree(chunkData, lx, height + 1, lz, chunkRnd);
-                 else if (biome.key === 'plains' && chunkRnd() < biome.featureDensity) placeFlower(chunkData, lx, height + 1, lz);
-                 else if (biome.key === 'desert' && chunkRnd() < biome.featureDensity) placeCactus(chunkData, lx, height + 1, lz, chunkRnd);
+                for (var y = height + 1; y <= SEA_LEVEL; y++) chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = 6;
+                if (biome.key === 'forest' && chunkRnd() < biome.featureDensity) placeTree(chunkData, lx, height + 1, lz, chunkRnd);
+                else if (biome.key === 'plains' && chunkRnd() < biome.featureDensity) placeFlower(chunkData, lx, height + 1, lz);
+                else if (biome.key === 'desert' && chunkRnd() < biome.featureDensity) placeCactus(chunkData, lx, height + 1, lz, chunkRnd);
             }
         }
-    }
-    return chunkData;
+        return chunkData;
 }
 
 var profileByURNCache = new Map();
