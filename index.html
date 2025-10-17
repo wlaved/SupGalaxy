@@ -938,7 +938,7 @@
         var VERSION = 'SupGalaxy v0.3.3-beta';
         var POLL_INTERVAL = 30000;
         var MAX_PEERS = 10;
-        var MOB_CAP = 20;
+        var MOB_CAP = 10;
         var BLOCKS = {
             1: { name: 'Bedrock', color: '#0b0b0b' },
             2: { name: 'Grass', color: '#3fb34f' },
@@ -1084,6 +1084,7 @@ var lastWPress = 0;
         var isConnecting = false;
         var playerAvatars = new Map();
         var answerPollingIntervals = new Map();
+        var activeAttackers = 0;
         var offerPollingIntervals = new Map();
 
         // Music Player state
@@ -4146,6 +4147,11 @@ self.onmessage = async function(e) {
             this.vz *= (1 - 2 * dt);
             this.pos.y = chunkManager.getSurfaceY(this.pos.x, this.pos.z, true);
 
+            const distanceToPlayer = this.pos.distanceTo(new THREE.Vector3(player.x, player.y, player.z));
+            if (distanceToPlayer > 30) {
+                return;
+            }
+
             let closestPlayer = null;
             let minDistance = Infinity;
             let hostDist = Math.hypot(player.x - this.pos.x, player.z - this.pos.z);
@@ -4191,10 +4197,11 @@ self.onmessage = async function(e) {
                     }
                 }
 
-                if (minDistance > 10 && minDistance < 30 && !this.laserActive && Date.now() > this.attackCooldown) {
+                if (minDistance > 10 && minDistance < 30 && !this.laserActive && Date.now() > this.attackCooldown && activeAttackers < 3) {
                     this.laserActive = true;
                     this.laserChargeTime = Date.now();
                     this.laserTarget.set(closestPlayer.x, chunkManager.getSurfaceY(closestPlayer.x, closestPlayer.z) + 1, closestPlayer.z);
+                    activeAttackers++;
                 }
             } else {
                 const newX = modWrap(this.pos.x + (Math.sin(Date.now() * 0.001 + this.id) * 0.002) * dt * 60, MAP_SIZE);
@@ -4253,6 +4260,7 @@ self.onmessage = async function(e) {
                         this.laserBeam.geometry.dispose();
                         this.laserBeam.material.dispose();
                         this.laserBeam = null;
+                        activeAttackers--;
                     }
                 }
             }
@@ -4370,8 +4378,8 @@ self.onmessage = async function(e) {
         function updateMobs() {
             if (isHost) {
                 mobs = mobs.filter(m => {
-                    const dist = m.pos.distanceTo(player);
-                    if (dist > 50) {
+                    const dist = m.pos.distanceTo(new THREE.Vector3(player.x, player.y, player.z));
+                    if (dist > 60) {
                         scene.remove(m.mesh);
                         disposeObject(m.mesh);
                         return false;
