@@ -3353,6 +3353,71 @@ self.onmessage = async function(e) {
             scene.add(avatar);
             return avatar;
         }
+
+        function createGhostAvatar(seed) {
+            const avatar = new THREE.Group();
+            const rnd = makeSeededRandom(seed);
+
+            // Use a ghostly color palette
+            const ghostColor = new THREE.Color().setHSL(rnd(), 0.8, 0.7);
+            const lightColor = ghostColor.clone().multiplyScalar(1.5);
+
+            const material = new THREE.MeshBasicMaterial({
+                color: ghostColor,
+                transparent: true,
+                opacity: 0.6,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false // Important for transparency
+            });
+
+            const scale = 1.8 / 2.6;
+
+            // Base dimensions
+            const baseLegHeight = 0.8 * scale;
+            const baseBodyHeight = 1.2 * scale;
+            const baseHeadSize = 0.6 * scale;
+            const baseArmHeight = 1.2 * scale;
+            const baseLegWidth = 0.4 * scale;
+            const baseBodyWidth = 0.8 * scale;
+            const baseArmWidth = 0.3 * scale;
+
+            // Deformed dimensions
+            const legHeight = baseLegHeight * (0.8 + rnd() * 0.4);
+            const bodyHeight = baseBodyHeight * (0.8 + rnd() * 0.4);
+            const headSize = baseHeadSize * (0.8 + rnd() * 0.4);
+            const armHeight = baseArmHeight * (0.8 + rnd() * 0.4);
+
+            const legGeo = new THREE.BoxGeometry(baseLegWidth * (0.8 + rnd() * 0.4), legHeight, baseLegWidth * (0.8 + rnd() * 0.4));
+            const bodyGeo = new THREE.BoxGeometry(baseBodyWidth * (0.8 + rnd() * 0.4), bodyHeight, 0.4 * scale * (0.8 + rnd() * 0.4));
+            const headGeo = new THREE.BoxGeometry(headSize, headSize, headSize);
+            const armGeo = new THREE.BoxGeometry(baseArmWidth * (0.8 + rnd() * 0.4), armHeight, baseArmWidth * (0.8 + rnd() * 0.4));
+
+            const leftLeg = new THREE.Mesh(legGeo, material);
+            leftLeg.position.set(-baseBodyWidth / 4 + (rnd() - 0.5) * 0.1, legHeight / 2, (rnd() - 0.5) * 0.1);
+            const rightLeg = new THREE.Mesh(legGeo, material);
+            rightLeg.position.set(baseBodyWidth / 4 + (rnd() - 0.5) * 0.1, legHeight / 2, (rnd() - 0.5) * 0.1);
+
+            const body = new THREE.Mesh(bodyGeo, material);
+            body.position.set((rnd() - 0.5) * 0.1, legHeight + bodyHeight / 2, (rnd() - 0.5) * 0.1);
+
+            const head = new THREE.Mesh(headGeo, material);
+            head.position.set((rnd() - 0.5) * 0.1, legHeight + bodyHeight + headSize / 2, (rnd() - 0.5) * 0.1);
+
+            const leftArm = new THREE.Mesh(armGeo, material);
+            leftArm.position.set(-(baseBodyWidth / 2 + baseArmWidth / 2) + (rnd() - 0.5) * 0.1, legHeight + bodyHeight / 2, (rnd() - 0.5) * 0.1);
+            const rightArm = new THREE.Mesh(armGeo, material);
+            rightArm.position.set((baseBodyWidth / 2 + baseArmWidth / 2) + (rnd() - 0.5) * 0.1, legHeight + bodyHeight / 2, (rnd() - 0.5) * 0.1);
+
+            avatar.add(leftLeg, rightLeg, body, head, leftArm, rightArm);
+
+            // Add a glowing light
+            const pointLight = new THREE.PointLight(lightColor, 1.5, 8);
+            pointLight.position.set(0, legHeight + bodyHeight / 2, 0); // Center of the body
+            avatar.add(pointLight);
+
+            return avatar;
+        }
+
         function initHotbar() {
             var hotbar = document.getElementById('hotbar');
             hotbar.innerHTML = '';
@@ -4043,105 +4108,96 @@ self.onmessage = async function(e) {
                 }
             }
         }
-        function Mob(x, z, id) {
-            this.id = id || Date.now();
+        function Mob(x, z, id, isAggressive = false) {
+            this.id = id || Date.now() + Math.random();
             this.pos = new THREE.Vector3(x, chunkManager.getSurfaceY(x, z) + 1, z);
             this.vx = 0;
             this.vz = 0;
             this.hp = 6;
-            this.mesh = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), new THREE.MeshLambertMaterial({ color: 0x9bff9b }));
+            this.isAggressive = isAggressive;
+            this.mesh = createGhostAvatar(this.id.toString());
             this.mesh.position.copy(this.pos);
-            this.originalColor = new THREE.Color(0x9bff9b);
+            this.originalColor = this.mesh.children[0].material.color.clone();
             scene.add(this.mesh);
             this.speed = 0.02 + Math.random() * 0.03;
             this.attackCooldown = 0;
             this.flashEnd = 0;
+            this.laserActive = false;
+            this.laserChargeTime = 0;
+            this.laserTarget = new THREE.Vector3();
+            this.laserBeam = null;
+            console.log(`Mob created at ${x}, ${this.pos.y}, ${z}`);
         }
         Mob.prototype.update = function (dt) {
-            // Only the host runs the mob AI and state changes.
             if (!isHost) {
-                // On clients, just update the mesh position smoothly.
                 this.mesh.position.lerp(this.pos, 0.1);
-                // Update flash effect on clients too
                 if (Date.now() < this.flashEnd) {
-                    this.mesh.material.color.set(0xff0000);
+                    this.mesh.children.forEach(c => { if (c.material) c.material.color.set(0xff0000); });
                 } else {
-                    this.mesh.material.color.copy(this.originalColor);
+                    this.mesh.children.forEach(c => { if (c.material) c.material.color.copy(this.originalColor); });
                 }
                 return;
             }
 
-            // Apply velocity from knockback
             this.pos.x += this.vx * dt;
             this.pos.z += this.vz * dt;
-
-            // Friction
             this.vx *= (1 - 2 * dt);
             this.vz *= (1 - 2 * dt);
+            this.pos.y = chunkManager.getSurfaceY(this.pos.x, this.pos.z) + Math.sin(Date.now() * 0.003 + this.id) * 0.4 + 0.5;
 
-
-            this.pos.y = chunkManager.getSurfaceY(this.pos.x, this.pos.z) + Math.sin(Date.now() * 0.003 + this.mesh.id) * 0.4 + 0.5;
-
-            // Find the closest player to target
             let closestPlayer = null;
             let minDistance = Infinity;
-
-            // Consider the host player
             let hostDist = Math.hypot(player.x - this.pos.x, player.z - this.pos.z);
             if (hostDist < minDistance) {
                 minDistance = hostDist;
                 closestPlayer = { x: player.x, z: player.z, health: player.health, username: userName };
             }
-
-            // Consider all connected peers
             for (const [username, peerData] of peers.entries()) {
                 if (userPositions[username]) {
                     const peerPos = userPositions[username];
                     const dist = Math.hypot(peerPos.x - this.pos.x, peerPos.z - this.pos.z);
                     if (dist < minDistance) {
                         minDistance = dist;
-                        closestPlayer = { x: peerPos.x, z: peerPos.z, health: 20, username: username }; // Assume full health for peers for now
+                        closestPlayer = { x: peerPos.x, z: peerPos.z, health: 20, username: username };
                     }
                 }
             }
 
-            if (closestPlayer && minDistance < 10) {
+            if (this.isAggressive && closestPlayer && minDistance < 30) {
                 const dx = closestPlayer.x - this.pos.x;
                 const dz = closestPlayer.z - this.pos.z;
-                const vx = dx / minDistance * this.speed;
-                const vz = dz / minDistance * this.speed;
-                const newX = modWrap(this.pos.x + vx * dt * 60, MAP_SIZE);
-                const newZ = modWrap(this.pos.z + vz * dt * 60, MAP_SIZE);
+                let moveX = 0, moveZ = 0;
 
-                if (!checkCollisionWithBlock(newX, this.pos.y, newZ) && !checkCollisionWithPlayer(newX, this.pos.y, newZ)) {
-                    this.pos.x = newX;
-                    this.pos.z = newZ;
-                }
-
-                if (minDistance < 1.2 && Date.now() - this.attackCooldown > 800) {
-                    this.attackCooldown = Date.now();
-                    // Host sends a message to the targeted player to inflict damage
-                    const targetPeer = peers.get(closestPlayer.username);
-                    if (targetPeer && targetPeer.dc && targetPeer.dc.readyState === 'open') {
-                        targetPeer.dc.send(JSON.stringify({ type: 'player_damage', damage: 1, attacker: 'mob' }));
-                    } else if (closestPlayer.username === userName) {
-                        // The mob is attacking the host player
-                        if (Date.now() - lastDamageTime > 800) {
-                            player.health = Math.max(0, player.health - 1);
-                            lastDamageTime = Date.now();
-                            document.getElementById('health').innerText = player.health;
-                            updateHealthBar();
-                            addMessage('Hit! HP: ' + player.health, 1000);
-                            if (player.health <= 0) {
-                                handlePlayerDeath();
-                            }
-                        }
+                if (!this.laserActive) {
+                    if (minDistance > 10) {
+                        moveX = dx;
+                        moveZ = dz;
+                    } else {
+                        moveX = -dx;
+                        moveZ = -dz;
                     }
                 }
+
+                if (moveX !== 0 || moveZ !== 0) {
+                    const moveDist = Math.hypot(moveX, moveZ);
+                    const vx = moveX / moveDist * this.speed;
+                    const vz = moveZ / moveDist * this.speed;
+                    const newX = modWrap(this.pos.x + vx * dt * 60, MAP_SIZE);
+                    const newZ = modWrap(this.pos.z + vz * dt * 60, MAP_SIZE);
+                    if (!checkCollisionWithBlock(newX, this.pos.y, newZ) && !checkCollisionWithPlayer(newX, this.pos.y, newZ)) {
+                        this.pos.x = newX;
+                        this.pos.z = newZ;
+                    }
+                }
+
+                if (minDistance > 10 && minDistance < 30 && !this.laserActive && Date.now() > this.attackCooldown) {
+                    this.laserActive = true;
+                    this.laserChargeTime = Date.now();
+                    this.laserTarget.set(closestPlayer.x, chunkManager.getSurfaceY(closestPlayer.x, closestPlayer.z) + 1, closestPlayer.z);
+                }
             } else {
-                // Wander aimlessly if no player is near
-                const newX = modWrap(this.pos.x + (Math.sin(Date.now() * 0.001 + this.mesh.id) * 0.002) * dt * 60, MAP_SIZE);
-                const newZ = modWrap(this.pos.z + (Math.cos(Date.now() * 0.001 + this.mesh.id) * 0.002) * dt * 60, MAP_SIZE);
+                const newX = modWrap(this.pos.x + (Math.sin(Date.now() * 0.001 + this.id) * 0.002) * dt * 60, MAP_SIZE);
+                const newZ = modWrap(this.pos.z + (Math.cos(Date.now() * 0.001 + this.id) * 0.002) * dt * 60, MAP_SIZE);
                 if (!checkCollisionWithBlock(newX, this.pos.y, newZ) && !checkCollisionWithPlayer(newX, this.pos.y, newZ)) {
                     this.pos.x = newX;
                     this.pos.z = newZ;
@@ -4150,16 +4206,59 @@ self.onmessage = async function(e) {
 
             this.mesh.position.copy(this.pos);
 
-            // Host broadcasts the mob's state to all clients.
-            const updateMessage = JSON.stringify({
-                type: 'mob_update',
-                id: this.id,
-                x: this.pos.x,
-                y: this.pos.y,
-                z: this.pos.z,
-                hp: this.hp
-            });
+            if (this.laserActive) {
+                const chargeDuration = 2000;
+                const fireDuration = 500;
+                const now = Date.now();
+                if (now - this.laserChargeTime < chargeDuration) {
+                    if (!this.laserBeam) {
+                        const material = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
+                        const geometry = new THREE.CylinderGeometry(0.1, 0.1, 1, 8);
+                        this.laserBeam = new THREE.Mesh(geometry, material);
+                        scene.add(this.laserBeam);
+                    }
+                    const start = this.pos.clone().add(new THREE.Vector3(0, 0.5, 0));
+                    const end = this.laserTarget;
+                    const distance = start.distanceTo(end);
+                    this.laserBeam.scale.y = distance;
+                    this.laserBeam.position.copy(start).lerp(end, 0.5);
+                    const dir = new THREE.Vector3().subVectors(end, start).normalize();
+                    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+                    this.laserBeam.quaternion.copy(quat);
+                } else if (now - this.laserChargeTime < chargeDuration + fireDuration) {
+                    this.laserBeam.material.color.set(0xffffff);
+                    this.laserBeam.material.opacity = 1.0;
 
+                    const raycaster = new THREE.Raycaster(this.pos, new THREE.Vector3().subVectors(this.laserTarget, this.pos).normalize());
+                    const hitMobs = mobs.filter(m => m.id !== this.id).map(m => raycaster.intersectObject(m.mesh, true)[0]).filter(Boolean);
+                    if (hitMobs.length > 0) {
+                        hitMobs[0].object.parent.parent.mob.hurt(2, 'mob');
+                    }
+
+                    const hitPlayers = Array.from(playerAvatars.values()).map(p => raycaster.intersectObject(p, true)[0]).filter(Boolean);
+                    if (hitPlayers.length > 0) {
+                        const targetUsername = hitPlayers[0].object.parent.parent.userData.username;
+                        const targetPeer = peers.get(targetUsername);
+                        if (targetPeer && targetPeer.dc.readyState === 'open') {
+                            targetPeer.dc.send(JSON.stringify({ type: 'player_damage', damage: 2, attacker: 'mob' }));
+                        }
+                    }
+
+                } else {
+                    this.laserActive = false;
+                    this.attackCooldown = Date.now() + 3000;
+                    if (this.laserBeam) {
+                        scene.remove(this.laserBeam);
+                        this.laserBeam.geometry.dispose();
+                        this.laserBeam.material.dispose();
+                        this.laserBeam = null;
+                    }
+                }
+            }
+
+            const updateMessage = JSON.stringify({
+                type: 'mob_update', id: this.id, x: this.pos.x, y: this.pos.y, z: this.pos.z, hp: this.hp, isAggressive: this.isAggressive, laserActive: this.laserActive, laserTarget: this.laserTarget
+            });
             for (const [peerUser, peerData] of peers.entries()) {
                 if (peerUser !== userName && peerData.dc && peerData.dc.readyState === 'open') {
                     peerData.dc.send(updateMessage);
@@ -4240,19 +4339,22 @@ self.onmessage = async function(e) {
                 }
             }
         };
-        function spawnMobs(count, rnd) {
-            if (!isHost) return; // Only the host can spawn mobs.
+        function spawnMobs(count, rnd, isAggressive) {
+            if (!isHost) return;
             if (!rnd) {
                 console.error("No seeded random generator provided for mob spawning.");
                 return;
             }
+            console.log(`Spawning ${count} mobs, aggressive: ${isAggressive}`);
 
             var loadedChunks = Array.from(chunkManager.chunks.keys());
             if (loadedChunks.length === 0) return;
+
             for (var i = 0; i < count; i++) {
                 var randomChunkKey = loadedChunks[Math.floor(rnd() * loadedChunks.length)];
                 var parsed = parseChunkKey(randomChunkKey);
                 if (!parsed) continue;
+
                 var cx = parsed.cx;
                 var cz = parsed.cz;
                 var baseX = cx * CHUNK_SIZE;
@@ -4261,7 +4363,7 @@ self.onmessage = async function(e) {
                 var lz = rnd() * CHUNK_SIZE;
                 var x = modWrap(baseX + lx, MAP_SIZE);
                 var z = modWrap(baseZ + lz, MAP_SIZE);
-                var m = new Mob(x, z);
+                var m = new Mob(x, z, null, isAggressive);
                 mobs.push(m);
             }
         }
@@ -4518,6 +4620,10 @@ self.onmessage = async function(e) {
                 }
                 if (e.key.toLowerCase() === 'e') {
                     onPointerDown({ button: 2, preventDefault: () => { } });
+                }
+                if (e.key.toLowerCase() === 'g') {
+                    const mobRnd = makeSeededRandom(worldSeed + '_mobs' + Date.now());
+                    spawnMobs(1, mobRnd, true);
                 }
             }
             function keyupHandler(e) { keys[e.key.toLowerCase()] = false; }
@@ -5205,14 +5311,42 @@ self.onmessage = async function(e) {
                             }
                             break;
                         case 'mob_update':
-                            // Received from host. Update local mob state.
                             let mob = mobs.find(m => m.id === data.id);
                             if (!mob) {
-                                mob = new Mob(data.x, data.z, data.id);
+                                mob = new Mob(data.x, data.z, data.id, data.isAggressive);
                                 mobs.push(mob);
                             }
                             mob.pos.set(data.x, data.y, data.z);
                             mob.hp = data.hp;
+                            mob.isAggressive = data.isAggressive;
+                            mob.laserActive = data.laserActive;
+                            if (data.laserTarget) {
+                                mob.laserTarget.set(data.laserTarget.x, data.laserTarget.y, data.laserTarget.z);
+                            }
+
+                            if (mob.laserActive && !mob.laserBeam) {
+                                const material = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
+                                const geometry = new THREE.CylinderGeometry(0.1, 0.1, 1, 8);
+                                mob.laserBeam = new THREE.Mesh(geometry, material);
+                                scene.add(mob.laserBeam);
+                            } else if (!mob.laserActive && mob.laserBeam) {
+                                scene.remove(mob.laserBeam);
+                                mob.laserBeam.geometry.dispose();
+                                mob.laserBeam.material.dispose();
+                                mob.laserBeam = null;
+                            }
+
+                            if (mob.laserBeam) {
+                                const start = mob.pos.clone().add(new THREE.Vector3(0, 0.5, 0));
+                                const end = mob.laserTarget;
+                                const distance = start.distanceTo(end);
+                                mob.laserBeam.scale.y = distance;
+                                mob.laserBeam.position.copy(start).lerp(end, 0.5);
+                                const dir = new THREE.Vector3().subVectors(end, start).normalize();
+                                const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+                                mob.laserBeam.quaternion.copy(quat);
+                            }
+
                             if (data.flash) {
                                 mob.flashEnd = Date.now() + 200;
                             }
@@ -6285,6 +6419,7 @@ self.onmessage = async function(e) {
                         knownWorlds.get(worldName).users.add(userName);
                     }
                     keywordCache.set(userAddress, userWorldKey);
+                    isHost = true; // Assume host mode for single player
                     document.getElementById('loginOverlay').style.display = 'none';
                     document.getElementById('hud').style.display = 'block';
                     document.getElementById('hotbar').style.display = 'flex';
@@ -6319,8 +6454,10 @@ self.onmessage = async function(e) {
                     console.log('[Login] Preloading initial chunks');
                     chunkManager.preloadChunks(spawnCx, spawnCz, LOAD_RADIUS);
                     console.log('[Login] Spawning mobs');
+                    const mobBehaviorRnd = makeSeededRandom(worldSeed + '_mob_behavior');
+                    const worldIsAggressive = mobBehaviorRnd() > 0.5;
                     const mobRnd = makeSeededRandom(worldSeed + '_mobs');
-                    // spawnMobs(12, mobRnd);
+                    spawnMobs(12, mobRnd, worldIsAggressive);
                     setupMobile();
                     initMinimap();
                     updateHotbarUI();
