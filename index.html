@@ -1284,13 +1284,28 @@ const BLOCKS = {
 };
 
 const BIOMES = [
-        { key: 'plains', palette: [2, 3, 4, 13, 15], heightScale: 0.8, roughness: 0.3, featureDensity: 0.05 },
-        { key: 'desert', palette: [5, 118, 4], heightScale: 0.6, roughness: 0.4, featureDensity: 0.02 },
-        { key: 'forest', palette: [2, 3, 14, 4], heightScale: 1.3, roughness: 0.4, featureDensity: 0.03 },
-        { key: 'snow', palette: [10, 17, 4], heightScale: 1.2, roughness: 0.5, featureDensity: 0.02 },
-        { key: 'mountain', palette: [4, 11, 3, 15, 1], heightScale: 10.5, roughness: 0.6, featureDensity: 0.01 },
-        { key: 'swamp', palette: [2, 3, 6, 14, 13], heightScale: 0.5, roughness: 0.2, featureDensity: 0.04 },
+    // Cold Biomes
+    { name: 'Tundra', temp: [0.0, 0.2], humid: [0.0, 1.0], palette: [10, 3, 4], terrain: { type: 'hilly', roughness: 0.4, baseHeight: 70 } },
+    { name: 'Taiga', temp: [0.2, 0.4], humid: [0.3, 0.7], palette: [2, 3, 14], terrain: { type: 'hilly', roughness: 0.5, baseHeight: 75 } },
+    { name: 'IceSpikes', temp: [0.0, 0.1], humid: [0.7, 1.0], palette: [17, 10], terrain: { type: 'spiky', roughness: 1.2, baseHeight: 80 } },
+
+    // Temperate Biomes
+    { name: 'Plains', temp: [0.4, 0.7], humid: [0.1, 0.5], palette: [2, 3, 4], terrain: { type: 'rolling', roughness: 0.2, baseHeight: 68 } },
+    { name: 'Forest', temp: [0.4, 0.7], humid: [0.5, 0.9], palette: [2, 3, 7], terrain: { type: 'rolling', roughness: 0.3, baseHeight: 72 } },
+    { name: 'Mountains', temp: [0.2, 0.5], humid: [0.0, 0.4], palette: [4, 15, 11], terrain: { type: 'mountainous', roughness: 2.5, baseHeight: 120 } },
+    { name: 'FloatingIslands', temp: [0.5, 0.8], humid: [0.6, 1.0], palette: [2, 3, 111], terrain: { type: 'floating', roughness: 0.8, baseHeight: 90, islandHeight: 160 } },
+
+    // Hot Biomes
+    { name: 'Desert', temp: [0.8, 1.0], humid: [0.0, 0.2], palette: [5, 118], terrain: { type: 'dunes', roughness: 0.3, baseHeight: 68 } },
+    { name: 'Savanna', temp: [0.7, 0.9], humid: [0.2, 0.5], palette: [2, 3, 7], terrain: { type: 'flat', roughness: 0.1, baseHeight: 68 } },
+    { name: 'Jungle', temp: [0.7, 1.0], humid: [0.7, 1.0], palette: [14, 3, 7], terrain: { type: 'dense', roughness: 0.6, baseHeight: 75 } },
+    { name: 'Volcanic', temp: [0.8, 1.0], humid: [0.3, 0.6], palette: [110, 16, 4], terrain: { type: 'volcanic', roughness: 1.8, baseHeight: 140 } },
+
+    // Aquatic Biomes
+    { name: 'Ocean', temp: [0.0, 1.0], humid: [0.0, 1.0], isOcean: true, palette: [5, 13, 15], terrain: { type: 'oceanic', roughness: 0.2, baseHeight: 30 } },
+    { name: 'DeepOcean', temp: [0.0, 1.0], humid: [0.0, 1.0], isOcean: true, palette: [15, 4, 1], terrain: { type: 'oceanic', roughness: 0.3, baseHeight: 15 } },
 ];
+
 
 function makeSeededRandom(seed) {
         var h = 2166136261 >>> 0;
@@ -1334,37 +1349,131 @@ function fbm(noiseFn, x, y, oct, persistence) {
         return sum / max;
 }
 
-function placeTree(chunkData, lx, cy, lz, rnd) {
-        const treeHeight = 5 + Math.floor(rnd() * 6);
-        const canopySize = 2 + Math.floor(rnd() * 2);
-        const trunkBlock = 7; // Wood
-        const leafBlock = 8; // Leaves
+function makeNoise3D(seed) {
+    const rnd = makeSeededRandom(seed);
+    const perm = Array.from({ length: 256 }, (_, i) => i).sort(() => rnd() - 0.5);
+    const p = new Uint8Array(512);
+    for (let i = 0; i < 256; i++) p[i] = p[i + 256] = perm[i];
 
-        // Trunk
-        for (let i = 0; i < treeHeight; i++) {
-            if (cy + i < MAX_HEIGHT) {
-                chunkData[(cy + i) * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = trunkBlock;
-            }
-        }
+    function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+    function lerp(t, a, b) { return a + t * (b - a); }
+    function grad(hash, x, y, z) {
+        const h = hash & 15;
+        const u = h < 8 ? x : y;
+        const v = h < 4 ? y : h === 12 || h === 14 ? x : z;
+        return ((h & 1) === 0 ? u : -u) + ((h & 2) === 0 ? v : -v);
+    }
 
-        // Canopy
-        for (let dy = -canopySize; dy <= canopySize; dy++) {
-            for (let dx = -canopySize; dx <= canopySize; dx++) {
-                for (let dz = -canopySize; dz <= canopySize; dz++) {
-                    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                    if (d <= canopySize + 0.5 * rnd()) {
-                        const rx = lx + dx;
-                        const ry = cy + treeHeight + dy;
-                        const rz = lz + dz;
-                        if (ry < MAX_HEIGHT && rx >= 0 && rx < CHUNK_SIZE && rz >= 0 && rz < CHUNK_SIZE) {
-                            if (chunkData[ry * CHUNK_SIZE * CHUNK_SIZE + rz * CHUNK_SIZE + rx] === BLOCK_AIR) {
-                                chunkData[ry * CHUNK_SIZE * CHUNK_SIZE + rz * CHUNK_SIZE + rx] = leafBlock;
-                            }
+    return function(x, y, z) {
+        const X = Math.floor(x) & 255;
+        const Y = Math.floor(y) & 255;
+        const Z = Math.floor(z) & 255;
+        x -= Math.floor(x);
+        y -= Math.floor(y);
+        z -= Math.floor(z);
+        const u = fade(x);
+        const v = fade(y);
+        const w = fade(z);
+        const A = p[X] + Y, AA = p[A] + Z, AB = p[A + 1] + Z;
+        const B = p[X + 1] + Y, BA = p[B] + Z, BB = p[B + 1] + Z;
+
+        return lerp(w, lerp(v, lerp(u, grad(p[AA], x, y, z),
+                                        grad(p[BA], x - 1, y, z)),
+                                lerp(u, grad(p[AB], x, y - 1, z),
+                                        grad(p[BB], x - 1, y - 1, z))),
+                        lerp(v, lerp(u, grad(p[AA + 1], x, y, z - 1),
+                                        grad(p[BA + 1], x - 1, y, z - 1)),
+                                lerp(u, grad(p[AB + 1], x, y - 1, z - 1),
+                                        grad(p[BB + 1], x - 1, y - 1, z - 1))));
+    };
+}
+
+
+function fbm3D(noiseFn, x, y, z, oct, persistence) {
+    let sum = 0, amp = 1, freq = 1, max = 0;
+    for (let i = 0; i < oct; i++) {
+        sum += amp * noiseFn(x * freq, y * freq, z * freq);
+        max += amp;
+        amp *= persistence;
+        freq *= 2;
+    }
+    return sum / max;
+}
+
+
+function placeTree(chunkData, lx, cy, lz, biome, rnd) {
+    if (biome.name === 'Taiga') {
+        placePineTree(chunkData, lx, cy, lz, rnd);
+    } else if (biome.name === 'Jungle') {
+        placeJungleTree(chunkData, lx, cy, lz, rnd);
+    } else {
+        placeOakTree(chunkData, lx, cy, lz, rnd);
+    }
+}
+
+function placeOakTree(chunkData, lx, cy, lz, rnd) {
+    const treeHeight = 5 + Math.floor(rnd() * 3);
+    const canopySize = 2 + Math.floor(rnd() * 2);
+    for (let i = 0; i < treeHeight; i++) {
+        if (cy + i < MAX_HEIGHT) chunkData[(cy + i) * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = 7;
+    }
+    for (let dy = -canopySize; dy <= canopySize; dy++) {
+        for (let dx = -canopySize; dx <= canopySize; dx++) {
+            for (let dz = -canopySize; dz <= canopySize; dz++) {
+                if (Math.sqrt(dx * dx + dy * dy + dz * dz) <= canopySize + 0.5 * rnd()) {
+                    const rx = lx + dx, ry = cy + treeHeight + dy, rz = lz + dz;
+                    if (ry < MAX_HEIGHT && rx >= 0 && rx < CHUNK_SIZE && rz >= 0 && rz < CHUNK_SIZE) {
+                        if (chunkData[ry * CHUNK_SIZE * CHUNK_SIZE + rz * CHUNK_SIZE + rx] === BLOCK_AIR) {
+                            chunkData[ry * CHUNK_SIZE * CHUNK_SIZE + rz * CHUNK_SIZE + rx] = 8;
                         }
                     }
                 }
             }
         }
+    }
+}
+
+function placePineTree(chunkData, lx, cy, lz, rnd) {
+    const treeHeight = 7 + Math.floor(rnd() * 4);
+    for (let i = 0; i < treeHeight; i++) {
+        if (cy + i < MAX_HEIGHT) chunkData[(cy + i) * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = 7;
+    }
+    for (let i = 0; i < treeHeight; i++) {
+        const radius = Math.floor((treeHeight - i) / 2);
+        for (let dx = -radius; dx <= radius; dx++) {
+            for (let dz = -radius; dz <= radius; dz++) {
+                if (dx * dx + dz * dz <= radius * radius) {
+                     const rx = lx + dx, ry = cy + i, rz = lz + dz;
+                     if (ry < MAX_HEIGHT && rx >= 0 && rx < CHUNK_SIZE && rz >= 0 && rz < CHUNK_SIZE) {
+                         if (chunkData[ry * CHUNK_SIZE * CHUNK_SIZE + rz * CHUNK_SIZE + rx] === BLOCK_AIR) {
+                             chunkData[ry * CHUNK_SIZE * CHUNK_SIZE + rz * CHUNK_SIZE + rx] = 8;
+                         }
+                     }
+                }
+            }
+        }
+    }
+}
+
+function placeJungleTree(chunkData, lx, cy, lz, rnd) {
+    const treeHeight = 12 + Math.floor(rnd() * 8);
+    for (let i = 0; i < treeHeight; i++) {
+        if (cy + i < MAX_HEIGHT) chunkData[(cy + i) * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = 7;
+    }
+    for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+            for (let dz = -2; dz <= 2; dz++) {
+                if (dx * dx + dz * dz <= 4) {
+                    const rx = lx + dx, ry = cy + treeHeight + dy, rz = lz + dz;
+                    if (ry < MAX_HEIGHT && rx >= 0 && rx < CHUNK_SIZE && rz >= 0 && rz < CHUNK_SIZE) {
+                        if (chunkData[ry * CHUNK_SIZE * CHUNK_SIZE + rz * CHUNK_SIZE + rx] === BLOCK_AIR) {
+                            chunkData[ry * CHUNK_SIZE * CHUNK_SIZE + rz * CHUNK_SIZE + rx] = 8;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 function placeFlower(chunkData, lx, cy, lz) {
@@ -1376,69 +1485,160 @@ function placeCactus(chunkData, lx, cy, lz, rnd) {
         for (var i = 0; i < h; i++) if (cy + i < MAX_HEIGHT) chunkData[(cy + i) * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = 9;
 }
 
-function pickBiome(n, biomes) {
-        if (n > 0.68) return biomes.find(b => b.key === 'snow') || biomes[0];
-        if (n < 0.25) return biomes.find(b => b.key === 'desert') || biomes[1];
-        if (n > 0.45) return biomes.find(b => b.key === 'forest') || biomes[2];
-        if (n > 0.60) return biomes.find(b => b.key === 'mountain') || biomes[4];
-        if (n < 0.35) return biomes.find(b => b.key === 'swamp') || biomes[5];
-        return biomes.find(b => b.key === 'plains') || biomes[0];
+function getBiome(temp, humid, elevation) {
+    // Special case for oceans
+    if (elevation < SEA_LEVEL / MAX_HEIGHT) {
+        if (elevation < (SEA_LEVEL - 20) / MAX_HEIGHT) return BIOMES.find(b => b.name === 'DeepOcean');
+        return BIOMES.find(b => b.name === 'Ocean');
+    }
+
+    const possibleBiomes = BIOMES.filter(b =>
+        !b.isOcean &&
+        temp >= b.temp[0] && temp <= b.temp[1] &&
+        humid >= b.humid[0] && humid <= b.humid[1]
+    );
+
+    if (possibleBiomes.length > 0) {
+        // Simple selection for now, could be weighted later
+        return possibleBiomes[0];
+    }
+    // Fallback biome
+    return BIOMES.find(b => b.name === 'Plains');
 }
 
 function generateChunkData(chunkKey) {
-        const worldSeed = chunkKey.split(':')[0];
-        const biomeRnd = makeSeededRandom(worldSeed + '_biomes');
+    const worldSeed = chunkKey.split(':')[0];
+    const noise3D = makeNoise3D(worldSeed);
+    const tempNoise = makeNoise(worldSeed + '_temp');
+    const humidNoise = makeNoise(worldSeed + '_humid');
+    const elevationNoise = makeNoise(worldSeed + '_elevation');
 
-        const modifiedBiomes = BIOMES.map(biome => ({
-            ...biome,
-            heightScale: Math.max(0.1, biome.heightScale + (biomeRnd() - 0.5) * biome.heightScale * 0.5),
-            roughness: Math.max(0.1, biome.roughness + (biomeRnd() - 0.5) * biome.roughness * 0.5),
-            featureDensity: Math.max(0.005, biome.featureDensity + (biomeRnd() - 0.5) * biome.featureDensity * 0.5)
-        }));
+    const chunkRnd = makeSeededRandom(chunkKey);
+    const cx = parseInt(chunkKey.split(':')[1]);
+    const cz = parseInt(chunkKey.split(':')[2]);
+    const chunkData = new Uint8Array(CHUNK_SIZE * MAX_HEIGHT * CHUNK_SIZE);
 
-        const noise = makeNoise(worldSeed);
-        const blockNoise = makeNoise(worldSeed + '_block');
-        const chunkRnd = makeSeededRandom(chunkKey);
-        const cx = parseInt(chunkKey.split(':')[1]);
-        const cz = parseInt(chunkKey.split(':')[2]);
-        const chunkData = new Uint8Array(CHUNK_SIZE * MAX_HEIGHT * CHUNK_SIZE);
+    const baseX = cx * CHUNK_SIZE;
+    const baseZ = cz * CHUNK_SIZE;
 
-        var baseX = cx * CHUNK_SIZE;
-        var baseZ = cz * CHUNK_SIZE;
-        for (var lx = 0; lx < CHUNK_SIZE; lx++) {
-            for (var lz = 0; lz < CHUNK_SIZE; lz++) {
-                var wx = baseX + lx;
-                var wz = baseZ + lz;
-                var nx = (wx % MAP_SIZE) / MAP_SIZE * 10000;
-                var nz = (wz % MAP_SIZE) / MAP_SIZE * 10000;
-                var n = fbm(noise, nx * 0.005, nz * 0.005, 5, 0.6);
-                var biome = pickBiome(n, modifiedBiomes);
-                var heightScale = biome.heightScale;
-                var roughness = biome.roughness;
-                var height = Math.floor(n * 40 * heightScale + 8);
-                if (n > 0.7) height += Math.floor((n - 0.7) * 60 * heightScale);
-                var localN = fbm(noise, nx * 0.05, nz * 0.05, 4, 0.5);
-                height += Math.floor(localN * 15 * roughness);
-                height = Math.max(1, Math.min(MAX_HEIGHT - 1, height));
-                for (var y = 0; y <= height; y++) {
-                    var id = BLOCK_AIR;
-                    if (y === 0) id = 1;
-                    else if (y < height - 3) id = 4;
-                    else if (y < height) id = 3;
-                    else {
-                        var blockN = fbm(blockNoise, nx * 0.1, nz * 0.1, 3, 0.6);
-                        var paletteIndex = Math.floor(blockN * biome.palette.length);
-                        id = biome.palette[paletteIndex % biome.palette.length];
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+            const wx = baseX + lx;
+            const wz = baseZ + lz;
+
+            // Determine Biome
+            const nx = wx / (MAP_SIZE * 0.1);
+            const nz = wz / (MAP_SIZE * 0.1);
+            const temp = fbm(tempNoise, nx, nz, 4, 0.5);
+            const humid = fbm(humidNoise, nx, nz, 4, 0.5);
+            const elevation = fbm(elevationNoise, nx * 0.5, nz * 0.5, 6, 0.6);
+            const biome = getBiome(temp, humid, elevation);
+
+            for (let y = 0; y < MAX_HEIGHT; y++) {
+                // --- Biome-Influenced Density Calculation ---
+                const baseHeight = biome.terrain.baseHeight;
+                const roughness = biome.terrain.roughness;
+                const groundLevelFactor = (y - baseHeight) / (64 * roughness);
+
+                const density = fbm3D(noise3D, wx / 80, y / 60, wz / 80, 5, 0.5);
+                let finalDensity = density - groundLevelFactor;
+
+                // --- Feature Generation ---
+                if (biome.terrain.type === 'floating') {
+                    const islandNoise = fbm3D(noise3D, wx / 120, y / 80, wz / 120, 4, 0.6);
+                    const islandMask = (y - biome.terrain.islandHeight + 20) / 50;
+                    finalDensity += islandNoise * (1 - islandMask);
+                } else if (biome.terrain.type === 'volcanic') {
+                    const volcanoShape = 1 - Math.sqrt(Math.pow(wx % 256 - 128, 2) + Math.pow(wz % 256 - 128, 2)) / 128;
+                    if (volcanoShape > 0) {
+                         const volcanoHeight = volcanoShape * biome.terrain.baseHeight;
+                         finalDensity += (y < volcanoHeight) ? 0.5 : 0;
+                         if (y < volcanoHeight && y > volcanoHeight - 5 && volcanoShape > 0.8) {
+                             chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = 16; // Lava
+                             continue;
+                         }
                     }
-                    chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = id;
                 }
-                for (var y = height + 1; y <= SEA_LEVEL; y++) chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = 6;
-                if (biome.key === 'forest' && chunkRnd() < biome.featureDensity) placeTree(chunkData, lx, height + 1, lz, chunkRnd);
-                else if (biome.key === 'plains' && chunkRnd() < biome.featureDensity) placeFlower(chunkData, lx, height + 1, lz);
-                else if (biome.key === 'desert' && chunkRnd() < biome.featureDensity) placeCactus(chunkData, lx, height + 1, lz, chunkRnd);
+
+                // Ravine generation
+                const ravineNoise = Math.abs(fbm(elevationNoise, nx * 5, nz * 5, 3, 0.5));
+                if (ravineNoise < 0.03) {
+                    finalDensity -= 0.5;
+                }
+
+
+                let blockId = BLOCK_AIR;
+
+                if (finalDensity > 0) {
+                    // Determine block type from biome palette
+                    const depth = baseHeight - y;
+                    if (y > baseHeight) { // Surface
+                         blockId = biome.palette[0];
+                    } else if (depth < 4) { // Sub-surface
+                         blockId = biome.palette[1] || biome.palette[0];
+                    } else { // Deep stone
+                         blockId = biome.palette[2] || 4;
+                    }
+
+                    // --- Ore Generation ---
+                    const oreNoise = fbm3D(noise3D, wx / 12, y / 12, wz / 12, 6, 0.6);
+                    if (oreNoise > 0.7) {
+                         if (y < 60 && oreNoise > 0.75) blockId = 11; // Coal
+                         if (y < 40 && oreNoise > 0.85) blockId = 111; // Crystal
+                         if (y < 20 && oreNoise > 0.95) blockId = 112; // Diamond-equivalent
+                    }
+
+                } else if (y < SEA_LEVEL && !biome.isOcean) {
+                     // Fill below sea level with water if it's not already an ocean biome
+                     blockId = 6;
+                }
+
+                if (y === 0) blockId = 1; // Bedrock
+
+                chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = blockId;
             }
         }
-        return chunkData;
+    }
+
+    // --- Vegetation Pass ---
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+            const wx = baseX + lx;
+            const wz = baseZ + lz;
+            const nx = wx / (MAP_SIZE * 0.1);
+            const nz = wz / (MAP_SIZE * 0.1);
+
+            const temp = fbm(tempNoise, nx, nz, 4, 0.5);
+            const humid = fbm(humidNoise, nx, nz, 4, 0.5);
+            const elevation = fbm(elevationNoise, nx * 0.5, nz * 0.5, 6, 0.6);
+            const biome = getBiome(temp, humid, elevation);
+
+            let surfaceY = -1;
+            for (let y = MAX_HEIGHT - 1; y > 0; y--) {
+                const blockId = chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx];
+                const blockAbove = chunkData[(y + 1) * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx];
+                if (blockId !== BLOCK_AIR && blockId !== 6 && blockAbove === BLOCK_AIR) {
+                    surfaceY = y;
+                    break;
+                }
+            }
+
+            if (surfaceY !== -1) {
+                const featureRnd = makeSeededRandom(chunkKey + '_' + lx + '_' + lz);
+                if (featureRnd() < 0.1) { // 10% chance for a feature
+                    if (['Forest', 'Plains', 'Jungle', 'Taiga'].includes(biome.name)) {
+                        placeTree(chunkData, lx, surfaceY + 1, lz, biome, featureRnd);
+                    } else if (biome.name === 'Desert') {
+                        placeCactus(chunkData, lx, surfaceY + 1, lz, featureRnd);
+                    } else if (biome.name === 'Plains') {
+                        placeFlower(chunkData, lx, surfaceY + 1, lz);
+                    }
+                }
+            }
+        }
+    }
+
+    return chunkData;
 }
 
 var profileByURNCache = new Map();
