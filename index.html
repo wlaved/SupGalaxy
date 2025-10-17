@@ -938,6 +938,7 @@
         var VERSION = 'SupGalaxy v0.3.3-beta';
         var POLL_INTERVAL = 30000;
         var MAX_PEERS = 10;
+        var MOB_CAP = 20;
         var BLOCKS = {
             1: { name: 'Bedrock', color: '#0b0b0b' },
             2: { name: 'Grass', color: '#3fb34f' },
@@ -3040,7 +3041,7 @@ self.onmessage = async function(e) {
                 this.buildChunkMesh(chunk);
             }
         };
-        ChunkManager.prototype.getSurfaceY = function (wx, wz) {
+        ChunkManager.prototype.getSurfaceY = function (wx, wz, forMobs = false) {
             var wrappedWx = modWrap(Math.floor(wx), MAP_SIZE);
             var wrappedWz = modWrap(Math.floor(wz), MAP_SIZE);
             var cx = Math.floor(wrappedWx / CHUNK_SIZE);
@@ -3050,7 +3051,7 @@ self.onmessage = async function(e) {
             var lx = Math.floor(wrappedWx % CHUNK_SIZE);
             var lz = Math.floor(wrappedWz % CHUNK_SIZE);
             for (var y = MAX_HEIGHT - 1; y >= 0; y--) {
-                if (chunk.get(lx, y, lz) !== BLOCK_AIR && chunk.get(lx, y, lz) !== 6) return y + 1;
+                if (isSolid(chunk.get(lx, y, lz), forMobs)) return y + (forMobs ? 2 : 1);
             }
             return SEA_LEVEL;
         };
@@ -4111,7 +4112,7 @@ self.onmessage = async function(e) {
         }
         function Mob(x, z, id, isAggressive = false) {
             this.id = id || Date.now() + Math.random();
-            this.pos = new THREE.Vector3(x, chunkManager.getSurfaceY(x, z) + 1, z);
+            this.pos = new THREE.Vector3(x, chunkManager.getSurfaceY(x, z, true), z);
             this.vx = 0;
             this.vz = 0;
             this.hp = 6;
@@ -4143,7 +4144,7 @@ self.onmessage = async function(e) {
             this.pos.z += this.vz * dt;
             this.vx *= (1 - 2 * dt);
             this.vz *= (1 - 2 * dt);
-            this.pos.y = chunkManager.getSurfaceY(this.pos.x, this.pos.z) + Math.sin(Date.now() * 0.003 + this.id) * 0.4 + 0.5;
+            this.pos.y = chunkManager.getSurfaceY(this.pos.x, this.pos.z, true);
 
             let closestPlayer = null;
             let minDistance = Infinity;
@@ -4184,7 +4185,7 @@ self.onmessage = async function(e) {
                     const vz = moveZ / moveDist * this.speed;
                     const newX = modWrap(this.pos.x + vx * dt * 60, MAP_SIZE);
                     const newZ = modWrap(this.pos.z + vz * dt * 60, MAP_SIZE);
-                    if (!checkCollisionWithBlock(newX, this.pos.y, newZ) && !checkCollisionWithPlayer(newX, this.pos.y, newZ)) {
+                    if (!checkCollisionWithPlayer(newX, this.pos.y, newZ)) {
                         this.pos.x = newX;
                         this.pos.z = newZ;
                     }
@@ -4198,7 +4199,7 @@ self.onmessage = async function(e) {
             } else {
                 const newX = modWrap(this.pos.x + (Math.sin(Date.now() * 0.001 + this.id) * 0.002) * dt * 60, MAP_SIZE);
                 const newZ = modWrap(this.pos.z + (Math.cos(Date.now() * 0.001 + this.id) * 0.002) * dt * 60, MAP_SIZE);
-                if (!checkCollisionWithBlock(newX, this.pos.y, newZ) && !checkCollisionWithPlayer(newX, this.pos.y, newZ)) {
+                if (!checkCollisionWithPlayer(newX, this.pos.y, newZ)) {
                     this.pos.x = newX;
                     this.pos.z = newZ;
                 }
@@ -4366,8 +4367,29 @@ self.onmessage = async function(e) {
                 mobs.push(m);
             }
         }
-        function isSolid(id) {
-            return id !== 0 && id !== 6 && id !== 12 && id !== 8 && id !== 16 && id !== 17 && id !== 100 && id !== 101 && id !== 102 && id !== 103 && id !== 104 && id !== 111 && id !== 112 && id !== 113 && id !== 114 && id !== 116 && id !== 117;
+        function updateMobs() {
+            if (isHost) {
+                mobs = mobs.filter(m => {
+                    const dist = m.pos.distanceTo(player);
+                    if (dist > 50) {
+                        scene.remove(m.mesh);
+                        disposeObject(m.mesh);
+                        return false;
+                    }
+                    return true;
+                });
+
+                if (mobs.length < MOB_CAP) {
+                    const mobRnd = makeSeededRandom(worldSeed + '_mobs' + Date.now());
+                    spawnMobs(1, mobRnd, true);
+                }
+            }
+        }
+        function isSolid(id, forMobs = false) {
+            if (forMobs) {
+                return id !== 0 && id !== 6 && id !== 12 && id !== 8; // Leaves are not solid for mobs
+            }
+            return id !== 0 && id !== 6 && id !== 12;
         }
         function checkCollisionWithBlock(newX, newY, newZ) {
             var minX = newX - 0.45;
@@ -4619,10 +4641,6 @@ self.onmessage = async function(e) {
                 }
                 if (e.key.toLowerCase() === 'e') {
                     onPointerDown({ button: 2, preventDefault: () => { } });
-                }
-                if (e.key.toLowerCase() === 'g') {
-                    const mobRnd = makeSeededRandom(worldSeed + '_mobs' + Date.now());
-                    spawnMobs(1, mobRnd, true);
                 }
             }
             function keyupHandler(e) { keys[e.key.toLowerCase()] = false; }
@@ -6950,6 +6968,7 @@ self.onmessage = async function(e) {
             }
             if (deathScreenShown) {
                 mobs.forEach(function (m) { m.update(dt); });
+                updateMobs();
                 updateSky(dt);
                 if (now - lastMinimapUpdateTime > 250) {
                     updateMinimap();
@@ -7085,6 +7104,7 @@ self.onmessage = async function(e) {
                 updateAvatarAnimation(now, isMoving);
                 chunkManager.update(player.x, player.z);
                 mobs.forEach(function (m) { m.update(dt); });
+                updateMobs();
                 updateSky(dt);
                 if (now - lastMinimapUpdateTime > 250) {
                     updateMinimap();
