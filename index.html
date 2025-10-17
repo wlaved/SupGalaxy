@@ -4170,13 +4170,13 @@ self.onmessage = async function(e) {
                 }
             }
 
-            if (this.isAggressive && closestPlayer && minDistance < 30) {
+            if (this.isAggressive && closestPlayer && minDistance < 16) {
                 const dx = closestPlayer.x - this.pos.x;
                 const dz = closestPlayer.z - this.pos.z;
                 let moveX = 0, moveZ = 0;
 
                 if (!this.laserActive) {
-                    if (minDistance > 10) {
+                    if (minDistance > 5) {
                         moveX = dx;
                         moveZ = dz;
                     } else {
@@ -4197,7 +4197,7 @@ self.onmessage = async function(e) {
                     }
                 }
 
-                if (minDistance > 10 && minDistance < 30 && !this.laserActive && Date.now() > this.attackCooldown && activeAttackers < 3) {
+                if (minDistance < 10 && !this.laserActive && Date.now() > this.attackCooldown && activeAttackers < 3) {
                     this.laserActive = true;
                     this.laserChargeTime = Date.now();
                     this.laserTarget.set(closestPlayer.x, chunkManager.getSurfaceY(closestPlayer.x, closestPlayer.z) + 1, closestPlayer.z);
@@ -4375,7 +4375,7 @@ self.onmessage = async function(e) {
                 mobs.push(m);
             }
         }
-        function updateMobs() {
+        function manageMobPopulation() {
             if (isHost) {
                 mobs = mobs.filter(m => {
                     const dist = m.pos.distanceTo(new THREE.Vector3(player.x, player.y, player.z));
@@ -6506,6 +6506,7 @@ self.onmessage = async function(e) {
                     lastRegenTime = lastFrame;
                     var unregisterKeyEvents = registerKeyEvents();
                     console.log('[Login] Starting game loop');
+                    setInterval(manageMobPopulation, 5000);
                     requestAnimationFrame(gameLoop);
                     addMessage('Welcome — world wraps at edges. Toggle camera with T. Good luck!', 5000);
                     var healthElement = document.getElementById('health');
@@ -6976,7 +6977,6 @@ self.onmessage = async function(e) {
             }
             if (deathScreenShown) {
                 mobs.forEach(function (m) { m.update(dt); });
-                updateMobs();
                 updateSky(dt);
                 if (now - lastMinimapUpdateTime > 250) {
                     updateMinimap();
@@ -7112,7 +7112,6 @@ self.onmessage = async function(e) {
                 updateAvatarAnimation(now, isMoving);
                 chunkManager.update(player.x, player.z);
                 mobs.forEach(function (m) { m.update(dt); });
-                updateMobs();
                 updateSky(dt);
                 if (now - lastMinimapUpdateTime > 250) {
                     updateMinimap();
