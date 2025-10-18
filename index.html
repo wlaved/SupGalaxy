@@ -938,7 +938,6 @@
         var VERSION = 'SupGalaxy v0.3.3-beta';
         var POLL_INTERVAL = 30000;
         var MAX_PEERS = 10;
-        var MOB_CAP = 10;
         var BLOCKS = {
             1: { name: 'Bedrock', color: '#0b0b0b' },
             2: { name: 'Grass', color: '#3fb34f' },
@@ -1039,11 +1038,11 @@ var lastWPress = 0;
         var hotbarOffset = 0;
         var cameraMode = 'third';
         var mobs = [];
+        var activeAttackers = 0;
         var lastDamageTime = 0;
         var lastRegenTime = 0;
         var joystick = { up: false, down: false, left: false, right: false };
         var lastFrame = performance.now();
-        var lastMinimapUpdateTime = 0;
         var mouseLocked = false;
         var deathScreenShown = false;
         var isDying = false;
@@ -1084,7 +1083,6 @@ var lastWPress = 0;
         var isConnecting = false;
         var playerAvatars = new Map();
         var answerPollingIntervals = new Map();
-        var activeAttackers = 0;
         var offerPollingIntervals = new Map();
 
         // Music Player state
@@ -1261,6 +1259,7 @@ const CHUNK_SIZE = 16;
 const MAX_HEIGHT = 256;
 const SEA_LEVEL = 16;
 const MAP_SIZE = 16384;
+const MOB_CAP = 10;
 const BLOCK_AIR = 0;
 
 const BLOCKS = {
@@ -3052,7 +3051,7 @@ self.onmessage = async function(e) {
             var lx = Math.floor(wrappedWx % CHUNK_SIZE);
             var lz = Math.floor(wrappedWz % CHUNK_SIZE);
             for (var y = MAX_HEIGHT - 1; y >= 0; y--) {
-                if (isSolid(chunk.get(lx, y, lz), forMobs)) return y + (forMobs ? 2 : 1);
+                if (isSolid(chunk.get(lx, y, lz), forMobs)) return y + 1;
             }
             return SEA_LEVEL;
         };
@@ -3356,71 +3355,6 @@ self.onmessage = async function(e) {
             scene.add(avatar);
             return avatar;
         }
-
-        function createGhostAvatar(seed) {
-            const avatar = new THREE.Group();
-            const rnd = makeSeededRandom(seed);
-
-            // Use a ghostly color palette
-            const ghostColor = new THREE.Color().setHSL(rnd(), 0.8, 0.7);
-            const lightColor = ghostColor.clone().multiplyScalar(1.5);
-
-            const material = new THREE.MeshBasicMaterial({
-                color: ghostColor,
-                transparent: true,
-                opacity: 0.6,
-                blending: THREE.AdditiveBlending,
-                depthWrite: false // Important for transparency
-            });
-
-            const scale = 1.8 / 2.6;
-
-            // Base dimensions
-            const baseLegHeight = 0.8 * scale;
-            const baseBodyHeight = 1.2 * scale;
-            const baseHeadSize = 0.6 * scale;
-            const baseArmHeight = 1.2 * scale;
-            const baseLegWidth = 0.4 * scale;
-            const baseBodyWidth = 0.8 * scale;
-            const baseArmWidth = 0.3 * scale;
-
-            // Deformed dimensions
-            const legHeight = baseLegHeight * (0.8 + rnd() * 0.4);
-            const bodyHeight = baseBodyHeight * (0.8 + rnd() * 0.4);
-            const headSize = baseHeadSize * (0.8 + rnd() * 0.4);
-            const armHeight = baseArmHeight * (0.8 + rnd() * 0.4);
-
-            const legGeo = new THREE.BoxGeometry(baseLegWidth * (0.8 + rnd() * 0.4), legHeight, baseLegWidth * (0.8 + rnd() * 0.4));
-            const bodyGeo = new THREE.BoxGeometry(baseBodyWidth * (0.8 + rnd() * 0.4), bodyHeight, 0.4 * scale * (0.8 + rnd() * 0.4));
-            const headGeo = new THREE.BoxGeometry(headSize, headSize, headSize);
-            const armGeo = new THREE.BoxGeometry(baseArmWidth * (0.8 + rnd() * 0.4), armHeight, baseArmWidth * (0.8 + rnd() * 0.4));
-
-            const leftLeg = new THREE.Mesh(legGeo, material);
-            leftLeg.position.set(-baseBodyWidth / 4 + (rnd() - 0.5) * 0.1, legHeight / 2, (rnd() - 0.5) * 0.1);
-            const rightLeg = new THREE.Mesh(legGeo, material);
-            rightLeg.position.set(baseBodyWidth / 4 + (rnd() - 0.5) * 0.1, legHeight / 2, (rnd() - 0.5) * 0.1);
-
-            const body = new THREE.Mesh(bodyGeo, material);
-            body.position.set((rnd() - 0.5) * 0.1, legHeight + bodyHeight / 2, (rnd() - 0.5) * 0.1);
-
-            const head = new THREE.Mesh(headGeo, material);
-            head.position.set((rnd() - 0.5) * 0.1, legHeight + bodyHeight + headSize / 2, (rnd() - 0.5) * 0.1);
-
-            const leftArm = new THREE.Mesh(armGeo, material);
-            leftArm.position.set(-(baseBodyWidth / 2 + baseArmWidth / 2) + (rnd() - 0.5) * 0.1, legHeight + bodyHeight / 2, (rnd() - 0.5) * 0.1);
-            const rightArm = new THREE.Mesh(armGeo, material);
-            rightArm.position.set((baseBodyWidth / 2 + baseArmWidth / 2) + (rnd() - 0.5) * 0.1, legHeight + bodyHeight / 2, (rnd() - 0.5) * 0.1);
-
-            avatar.add(leftLeg, rightLeg, body, head, leftArm, rightArm);
-
-            // Add a glowing light
-            const pointLight = new THREE.PointLight(lightColor, 1.5, 8);
-            pointLight.position.set(0, legHeight + bodyHeight / 2, 0); // Center of the body
-            avatar.add(pointLight);
-
-            return avatar;
-        }
-
         function initHotbar() {
             var hotbar = document.getElementById('hotbar');
             hotbar.innerHTML = '';
@@ -4111,102 +4045,106 @@ self.onmessage = async function(e) {
                 }
             }
         }
-        function Mob(x, z, id, isAggressive = false) {
-            this.id = id || Date.now() + Math.random();
-            this.pos = new THREE.Vector3(x, chunkManager.getSurfaceY(x, z, true), z);
+        function Mob(x, z, id) {
+            this.id = id || Date.now();
+            this.pos = new THREE.Vector3(x, chunkManager.getSurfaceY(x, z) + 1, z);
             this.vx = 0;
             this.vz = 0;
             this.hp = 6;
-            this.isAggressive = isAggressive;
-            this.mesh = createGhostAvatar(this.id.toString());
+            this.mesh = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), new THREE.MeshLambertMaterial({ color: 0x9bff9b }));
             this.mesh.position.copy(this.pos);
-            this.originalColor = this.mesh.children[0].material.color.clone();
+            this.originalColor = new THREE.Color(0x9bff9b);
             scene.add(this.mesh);
             this.speed = 0.02 + Math.random() * 0.03;
             this.attackCooldown = 0;
             this.flashEnd = 0;
-            this.laserActive = false;
-            this.laserChargeTime = 0;
-            this.laserTarget = new THREE.Vector3();
-            this.laserBeam = null;
         }
         Mob.prototype.update = function (dt) {
+            // Only the host runs the mob AI and state changes.
             if (!isHost) {
+                // On clients, just update the mesh position smoothly.
                 this.mesh.position.lerp(this.pos, 0.1);
+                // Update flash effect on clients too
                 if (Date.now() < this.flashEnd) {
-                    this.mesh.children.forEach(c => { if (c.material) c.material.color.set(0xff0000); });
+                    this.mesh.material.color.set(0xff0000);
                 } else {
-                    this.mesh.children.forEach(c => { if (c.material) c.material.color.copy(this.originalColor); });
+                    this.mesh.material.color.copy(this.originalColor);
                 }
                 return;
             }
 
+            // Apply velocity from knockback
             this.pos.x += this.vx * dt;
             this.pos.z += this.vz * dt;
+
+            // Friction
             this.vx *= (1 - 2 * dt);
             this.vz *= (1 - 2 * dt);
-            this.pos.y = chunkManager.getSurfaceY(this.pos.x, this.pos.z, true);
 
-            const distanceToPlayer = this.pos.distanceTo(new THREE.Vector3(player.x, player.y, player.z));
-            if (distanceToPlayer > 30) {
-                return;
-            }
 
+            this.pos.y = chunkManager.getSurfaceY(this.pos.x, this.pos.z) + Math.sin(Date.now() * 0.003 + this.mesh.id) * 0.4 + 0.5;
+
+            // Find the closest player to target
             let closestPlayer = null;
             let minDistance = Infinity;
+
+            // Consider the host player
             let hostDist = Math.hypot(player.x - this.pos.x, player.z - this.pos.z);
             if (hostDist < minDistance) {
                 minDistance = hostDist;
                 closestPlayer = { x: player.x, z: player.z, health: player.health, username: userName };
             }
+
+            // Consider all connected peers
             for (const [username, peerData] of peers.entries()) {
                 if (userPositions[username]) {
                     const peerPos = userPositions[username];
                     const dist = Math.hypot(peerPos.x - this.pos.x, peerPos.z - this.pos.z);
                     if (dist < minDistance) {
                         minDistance = dist;
-                        closestPlayer = { x: peerPos.x, z: peerPos.z, health: 20, username: username };
+                        closestPlayer = { x: peerPos.x, z: peerPos.z, health: 20, username: username }; // Assume full health for peers for now
                     }
                 }
             }
 
-            if (this.isAggressive && closestPlayer && minDistance < 16) {
+            if (closestPlayer && minDistance < 10) {
                 const dx = closestPlayer.x - this.pos.x;
                 const dz = closestPlayer.z - this.pos.z;
-                let moveX = 0, moveZ = 0;
+                const vx = dx / minDistance * this.speed;
+                const vz = dz / minDistance * this.speed;
+                const newX = modWrap(this.pos.x + vx * dt * 60, MAP_SIZE);
+                const newZ = modWrap(this.pos.z + vz * dt * 60, MAP_SIZE);
 
-                if (!this.laserActive) {
-                    if (minDistance > 5) {
-                        moveX = dx;
-                        moveZ = dz;
-                    } else {
-                        moveX = -dx;
-                        moveZ = -dz;
-                    }
+                if (!checkCollisionWithBlock(newX, this.pos.y, newZ) && !checkCollisionWithPlayer(newX, this.pos.y, newZ)) {
+                    this.pos.x = newX;
+                    this.pos.z = newZ;
                 }
 
-                if (moveX !== 0 || moveZ !== 0) {
-                    const moveDist = Math.hypot(moveX, moveZ);
-                    const vx = moveX / moveDist * this.speed;
-                    const vz = moveZ / moveDist * this.speed;
-                    const newX = modWrap(this.pos.x + vx * dt * 60, MAP_SIZE);
-                    const newZ = modWrap(this.pos.z + vz * dt * 60, MAP_SIZE);
-                    if (!checkCollisionWithPlayer(newX, this.pos.y, newZ)) {
-                        this.pos.x = newX;
-                        this.pos.z = newZ;
+                if (minDistance < 1.2 && Date.now() - this.attackCooldown > 800) {
+                    this.attackCooldown = Date.now();
+                    // Host sends a message to the targeted player to inflict damage
+                    const targetPeer = peers.get(closestPlayer.username);
+                    if (targetPeer && targetPeer.dc && targetPeer.dc.readyState === 'open') {
+                        targetPeer.dc.send(JSON.stringify({ type: 'player_damage', damage: 1, attacker: 'mob' }));
+                    } else if (closestPlayer.username === userName) {
+                        // The mob is attacking the host player
+                        if (Date.now() - lastDamageTime > 800) {
+                            player.health = Math.max(0, player.health - 1);
+                            lastDamageTime = Date.now();
+                            document.getElementById('health').innerText = player.health;
+                            updateHealthBar();
+                            addMessage('Hit! HP: ' + player.health, 1000);
+                            if (player.health <= 0) {
+                                handlePlayerDeath();
+                            }
+                        }
                     }
-                }
-
-                if (minDistance < 10 && !this.laserActive && Date.now() > this.attackCooldown && activeAttackers < 3) {
-                    this.laserActive = true;
-                    this.laserChargeTime = Date.now();
-                    this.laserTarget.set(closestPlayer.x, chunkManager.getSurfaceY(closestPlayer.x, closestPlayer.z) + 1, closestPlayer.z);
-                    activeAttackers++;
                 }
             } else {
-                const newX = modWrap(this.pos.x + (Math.sin(Date.now() * 0.001 + this.id) * 0.002) * dt * 60, MAP_SIZE);
-                const newZ = modWrap(this.pos.z + (Math.cos(Date.now() * 0.001 + this.id) * 0.002) * dt * 60, MAP_SIZE);
-                if (!checkCollisionWithPlayer(newX, this.pos.y, newZ)) {
+                // Wander aimlessly if no player is near
+                const newX = modWrap(this.pos.x + (Math.sin(Date.now() * 0.001 + this.mesh.id) * 0.002) * dt * 60, MAP_SIZE);
+                const newZ = modWrap(this.pos.z + (Math.cos(Date.now() * 0.001 + this.mesh.id) * 0.002) * dt * 60, MAP_SIZE);
+                if (!checkCollisionWithBlock(newX, this.pos.y, newZ) && !checkCollisionWithPlayer(newX, this.pos.y, newZ)) {
                     this.pos.x = newX;
                     this.pos.z = newZ;
                 }
@@ -4214,60 +4152,16 @@ self.onmessage = async function(e) {
 
             this.mesh.position.copy(this.pos);
 
-            if (this.laserActive) {
-                const chargeDuration = 2000;
-                const fireDuration = 500;
-                const now = Date.now();
-                if (now - this.laserChargeTime < chargeDuration) {
-                    if (!this.laserBeam) {
-                        const material = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
-                        const geometry = new THREE.CylinderGeometry(0.1, 0.1, 1, 8);
-                        this.laserBeam = new THREE.Mesh(geometry, material);
-                        scene.add(this.laserBeam);
-                    }
-                    const start = this.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0));
-                    const end = this.laserTarget;
-                    const distance = start.distanceTo(end);
-                    this.laserBeam.scale.y = distance;
-                    this.laserBeam.position.copy(start).lerp(end, 0.5);
-                    const dir = new THREE.Vector3().subVectors(end, start).normalize();
-                    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-                    this.laserBeam.quaternion.copy(quat);
-                } else if (now - this.laserChargeTime < chargeDuration + fireDuration) {
-                    this.laserBeam.material.color.set(0xffffff);
-                    this.laserBeam.material.opacity = 1.0;
-
-                    const raycaster = new THREE.Raycaster(this.pos, new THREE.Vector3().subVectors(this.laserTarget, this.pos).normalize());
-                    const hitMobs = mobs.filter(m => m.id !== this.id).map(m => raycaster.intersectObject(m.mesh, true)[0]).filter(Boolean);
-                    if (hitMobs.length > 0) {
-                        hitMobs[0].object.parent.parent.mob.hurt(2, 'mob');
-                    }
-
-                    const hitPlayers = Array.from(playerAvatars.values()).map(p => raycaster.intersectObject(p, true)[0]).filter(Boolean);
-                    if (hitPlayers.length > 0) {
-                        const targetUsername = hitPlayers[0].object.parent.parent.userData.username;
-                        const targetPeer = peers.get(targetUsername);
-                        if (targetPeer && targetPeer.dc.readyState === 'open') {
-                            targetPeer.dc.send(JSON.stringify({ type: 'player_damage', damage: 2, attacker: 'mob' }));
-                        }
-                    }
-
-                } else {
-                    this.laserActive = false;
-                    this.attackCooldown = Date.now() + 3000;
-                    if (this.laserBeam) {
-                        scene.remove(this.laserBeam);
-                        this.laserBeam.geometry.dispose();
-                        this.laserBeam.material.dispose();
-                        this.laserBeam = null;
-                        activeAttackers--;
-                    }
-                }
-            }
-
+            // Host broadcasts the mob's state to all clients.
             const updateMessage = JSON.stringify({
-                type: 'mob_update', id: this.id, x: this.pos.x, y: this.pos.y, z: this.pos.z, hp: this.hp, isAggressive: this.isAggressive, laserActive: this.laserActive, laserTarget: this.laserTarget
+                type: 'mob_update',
+                id: this.id,
+                x: this.pos.x,
+                y: this.pos.y,
+                z: this.pos.z,
+                hp: this.hp
             });
+
             for (const [peerUser, peerData] of peers.entries()) {
                 if (peerUser !== userName && peerData.dc && peerData.dc.readyState === 'open') {
                     peerData.dc.send(updateMessage);
@@ -4348,56 +4242,337 @@ self.onmessage = async function(e) {
                 }
             }
         };
-        function spawnMobs(count, rnd, isAggressive) {
-            if (!isHost) return;
-            if (!rnd) {
-                console.error("No seeded random generator provided for mob spawning.");
+        function Mob(x, z, id) {
+            this.id = id || Date.now();
+            this.pos = new THREE.Vector3(x, chunkManager.getSurfaceY(x, z, true) + 1, z);
+            this.vx = 0;
+            this.vz = 0;
+            this.hp = 6;
+            this.speed = 0.02 + Math.random() * 0.03;
+            this.isAggressive = false;
+            this.attackCooldown = Date.now() + Math.random() * 2000;
+            this.flashEnd = 0;
+            this.laserActive = false;
+            this.laserChargeTime = 0;
+            this.laserTarget = new THREE.Vector3();
+            this.wanderTarget = new THREE.Vector3();
+            this.wanderTimer = 0;
+            this.mesh = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), new THREE.MeshLambertMaterial({ color: 0x9bff9b }));
+            this.mesh.position.copy(this.pos);
+            this.originalColor = this.mesh.material.color.clone();
+
+            const beamMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
+            const beamGeometry = new THREE.CylinderGeometry(0.1, 0.1, 1, 8);
+            beamGeometry.translate(0, 0.5, 0); // Position one end at the mesh origin
+            this.laserBeam = new THREE.Mesh(beamGeometry, beamMaterial);
+            this.laserBeam.visible = false;
+            scene.add(this.laserBeam);
+
+            scene.add(this.mesh);
+        }
+
+        Mob.prototype.hurt = function (dmg, attackerName) {
+            if (!isHost) return; // Only host can process damage
+
+            this.hp -= dmg;
+            this.flashEnd = Date.now() + 200; // Trigger flash effect
+            safePlayAudio(soundHit);
+
+            // Apply knockback
+            const attacker = (attackerName === userName) ? player : userPositions[attackerName];
+            if (attacker) {
+                const attackerX = (attackerName === userName) ? attacker.x : attacker.targetX;
+                const attackerZ = (attackerName === userName) ? attacker.z : attacker.targetZ;
+                const dx = this.pos.x - attackerX;
+                const dz = this.pos.z - attackerZ;
+                const dist = Math.hypot(dx, dz);
+                const knockbackStrength = 8;
+                if (dist > 0) {
+                    this.vx += (dx / dist) * knockbackStrength;
+                    this.vz += (dz / dist) * knockbackStrength;
+                }
+            }
+
+
+            if (this.hp <= 0) {
+                this.die(attackerName);
+            } else {
+                // Broadcast the health update
+                const updateMessage = JSON.stringify({
+                    type: 'mob_update',
+                    id: this.id,
+                    x: this.pos.x,
+                    y: this.pos.y,
+                    z: this.pos.z,
+                    hp: this.hp,
+                    flash: true // Tell clients to trigger the flash
+                });
+                for (const [peerUser, peerData] of peers.entries()) {
+                    if (peerUser !== userName && peerData.dc && peerData.dc.readyState === 'open') {
+                        peerData.dc.send(updateMessage);
+                    }
+                }
+            }
+        };
+
+        Mob.prototype.die = function (killerName) {
+            if (!isHost) return; // Only host can process death
+
+            try {
+                scene.remove(this.mesh);
+                scene.remove(this.laserBeam);
+                disposeObject(this.mesh);
+                disposeObject(this.laserBeam);
+            } catch (e) { }
+
+            mobs = mobs.filter(m => m.id !== this.id);
+            addMessage('Mob defeated!');
+
+            // Award score to the killer
+            if (killerName === userName) {
+                player.score += 10;
+                document.getElementById('score').innerText = player.score;
+                addMessage('+10 score');
+            } else {
+                const killerPeer = peers.get(killerName);
+                if (killerPeer && killerPeer.dc && killerPeer.dc.readyState === 'open') {
+                    killerPeer.dc.send(JSON.stringify({ type: 'add_score', amount: 10 }));
+                }
+            }
+
+            // Broadcast the kill to all clients
+            const killMessage = JSON.stringify({ type: 'mob_kill', id: this.id });
+            for (const [peerUser, peerData] of peers.entries()) {
+                if (peerUser !== userName && peerData.dc && peerData.dc.readyState === 'open') {
+                    peerData.dc.send(killMessage);
+                }
+            }
+        };
+
+        Mob.prototype.update = function (dt) {
+            if (!isHost) {
+                this.mesh.position.lerp(this.pos, 0.1);
+                this.laserBeam.visible = this.laserActive;
+                if (this.laserActive) {
+                    const direction = new THREE.Vector3().subVectors(this.laserTarget, this.pos);
+                    const distance = direction.length();
+                    this.laserBeam.position.copy(this.pos);
+                    this.laserBeam.scale.y = distance;
+                    const quaternion = new THREE.Quaternion();
+                    const up = new THREE.Vector3(0, 1, 0);
+                    quaternion.setFromUnitVectors(up, direction.normalize());
+                    this.laserBeam.setRotationFromQuaternion(quaternion);
+                }
                 return;
             }
 
-            var loadedChunks = Array.from(chunkManager.chunks.keys());
-            if (loadedChunks.length === 0) return;
+            const distanceToPlayer = this.pos.distanceTo(new THREE.Vector3(player.x, player.y, player.z));
 
-            for (var i = 0; i < count; i++) {
-                var randomChunkKey = loadedChunks[Math.floor(rnd() * loadedChunks.length)];
-                var parsed = parseChunkKey(randomChunkKey);
-                if (!parsed) continue;
+            if (distanceToPlayer > 30) {
+                 this.isAggressive = false;
+                 this.laserBeam.visible = false;
+                 this.laserActive = false;
+                 return;
+            }
 
-                var cx = parsed.cx;
-                var cz = parsed.cz;
-                var baseX = cx * CHUNK_SIZE;
-                var baseZ = cz * CHUNK_SIZE;
-                var lx = rnd() * CHUNK_SIZE;
-                var lz = rnd() * CHUNK_SIZE;
-                var x = modWrap(baseX + lx, MAP_SIZE);
-                var z = modWrap(baseZ + lz, MAP_SIZE);
-                var m = new Mob(x, z, null, isAggressive);
-                mobs.push(m);
+            if (distanceToPlayer < 16) {
+                this.isAggressive = true;
+            }
+
+            if (this.laserActive) {
+                const chargeDuration = 1000; // 1 second charge
+                const fireDuration = 200;   // 0.2 second fire
+                const now = Date.now();
+
+                if (now > this.laserChargeTime + chargeDuration) {
+                    // Fire laser
+                    this.laserBeam.material.color.set(0xffffff);
+                    this.laserBeam.material.opacity = 1.0;
+
+                    const direction = new THREE.Vector3().subVectors(this.laserTarget, this.pos).normalize();
+                    raycaster.set(this.pos, direction);
+                    raycaster.far = 30;
+
+                    const intersects = raycaster.intersectObjects([avatarGroup, ...mobs.map(m => m.mesh)]);
+                    if (intersects.length > 0) {
+                        const hitObject = intersects[0].object;
+                        if (hitObject.parent === avatarGroup) {
+                            if (Date.now() - lastDamageTime > 800) {
+                                player.health = Math.max(0, player.health - 2);
+                                lastDamageTime = Date.now();
+                                flashDamageEffect();
+                                addMessage('Hit by laser!', 1000);
+                                if (player.health <= 0) handlePlayerDeath();
+                            }
+                        } else {
+                            const hitMob = mobs.find(m => m.mesh === hitObject);
+                            if (hitMob) {
+                                hitMob.hurt(2, 'mob');
+                            }
+                        }
+                    }
+
+                    if (now > this.laserChargeTime + chargeDuration + fireDuration) {
+                        // End attack
+                        this.laserActive = false;
+                        this.laserBeam.visible = false;
+                        this.attackCooldown = now + 2000 + Math.random() * 2000;
+                        activeAttackers = Math.max(0, activeAttackers - 1);
+                    }
+                } else {
+                    // Charging laser
+                    this.laserBeam.visible = true;
+                    this.laserBeam.material.color.set(0xff0000);
+                    this.laserBeam.material.opacity = 0.5 + 0.5 * ((now - this.laserChargeTime) / chargeDuration);
+
+                    const direction = new THREE.Vector3().subVectors(this.laserTarget, this.pos);
+                    const distance = direction.length();
+                    this.laserBeam.position.copy(this.pos);
+                    this.laserBeam.scale.y = distance;
+
+                    const quaternion = new THREE.Quaternion();
+                    const up = new THREE.Vector3(0, 1, 0);
+                    quaternion.setFromUnitVectors(up, direction.normalize());
+                    this.laserBeam.setRotationFromQuaternion(quaternion);
+                }
+
+            } else if (this.isAggressive) {
+                const dx = player.x - this.pos.x;
+                const dz = player.z - this.pos.z;
+                const distance = Math.hypot(dx, dz);
+                const angle = Math.atan2(dx, dz);
+                this.mesh.rotation.y = angle;
+
+                if (distance > 5) {
+                    this.pos.x += Math.sin(angle) * this.speed * dt * 60;
+                    this.pos.z += Math.cos(angle) * this.speed * dt * 60;
+                } else {
+                    this.pos.x -= Math.sin(angle) * this.speed * dt * 60;
+                    this.pos.z -= Math.cos(angle) * this.speed * dt * 60;
+                }
+
+                if (distance < 10 && Date.now() > this.attackCooldown && activeAttackers < 3) {
+                    this.laserActive = true;
+                    this.laserChargeTime = Date.now();
+                    this.laserTarget.copy(new THREE.Vector3(player.x, player.y + player.height / 2, player.z));
+                    activeAttackers++;
+                }
+            } else {
+                // Wander aimlessly
+                if (Date.now() > this.wanderTimer) {
+                    this.wanderTarget.x = this.pos.x + (Math.random() - 0.5) * 20;
+                    this.wanderTarget.z = this.pos.z + (Math.random() - 0.5) * 20;
+                    this.wanderTimer = Date.now() + 3000 + Math.random() * 4000;
+                }
+                const dx = this.wanderTarget.x - this.pos.x;
+                const dz = this.wanderTarget.z - this.pos.z;
+                const dist = Math.hypot(dx, dz);
+                if (dist > 1) {
+                    this.pos.x += (dx / dist) * this.speed * dt * 60;
+                    this.pos.z += (dz / dist) * this.speed * dt * 60;
+                }
+            }
+
+            this.pos.y = chunkManager.getSurfaceY(this.pos.x, this.pos.z, true) + Math.sin(Date.now() * 0.003 + this.id) * 0.4 + 1;
+            this.mesh.position.copy(this.pos);
+
+            const updateMessage = JSON.stringify({
+                type: 'mob_update',
+                id: this.id,
+                x: this.pos.x, y: this.pos.y, z: this.pos.z,
+                rotationY: this.mesh.rotation.y,
+                isAggressive: this.isAggressive,
+                laserActive: this.laserActive,
+                laserTarget: this.laserActive ? this.laserTarget : null
+            });
+
+            for (const [peerUser, peerData] of peers.entries()) {
+                if (peerUser !== userName && peerData.dc && peerData.dc.readyState === 'open') {
+                    peerData.dc.send(updateMessage);
+                }
+            }
+        };
+
+        function disposeObject(obj) {
+            if (!obj) return;
+            if (obj.geometry) obj.geometry.dispose();
+            if (obj.material) {
+                if (Array.isArray(obj.material)) {
+                    obj.material.forEach(material => {
+                        if (material.map) material.map.dispose();
+                        material.dispose();
+                    });
+                } else {
+                    if (obj.material.map) obj.material.map.dispose();
+                    obj.material.dispose();
+                }
+            }
+            while (obj.children.length > 0) {
+                disposeObject(obj.children[0]);
+                obj.remove(obj.children[0]);
             }
         }
-        function manageMobPopulation() {
-            if (isHost) {
-                mobs = mobs.filter(m => {
-                    const dist = m.pos.distanceTo(new THREE.Vector3(player.x, player.y, player.z));
-                    if (dist > 60) {
-                        scene.remove(m.mesh);
-                        disposeObject(m.mesh);
-                        return false;
-                    }
-                    return true;
-                });
 
-                if (mobs.length < MOB_CAP) {
-                    const mobRnd = makeSeededRandom(worldSeed + '_mobs' + Date.now());
-                    spawnMobs(1, mobRnd, true);
+        function manageMobPopulation() {
+            if (!isHost) return;
+
+            const mobsToKeep = [];
+            for (const mob of mobs) {
+                const distance = mob.pos.distanceTo(new THREE.Vector3(player.x, player.y, player.z));
+                if (distance > 60) {
+                    scene.remove(mob.mesh);
+                    disposeObject(mob.mesh);
+
+                    const killMessage = JSON.stringify({ type: 'mob_kill', id: mob.id });
+                    for (const [peerUser, peerData] of peers.entries()) {
+                        if (peerUser !== userName && peerData.dc && peerData.dc.readyState === 'open') {
+                            peerData.dc.send(killMessage);
+                        }
+                    }
+                } else {
+                    mobsToKeep.push(mob);
+                }
+            }
+            mobs = mobsToKeep;
+
+            if (mobs.length < MOB_CAP) {
+                const mobRnd = makeSeededRandom(worldSeed + '_mobs' + Date.now());
+                spawnMobs(1, mobRnd);
+            }
+        }
+
+        function spawnMobs(count, rnd) {
+            if (!isHost) return;
+            const spawnRadiusMin = 20;
+            const spawnRadiusMax = 60;
+
+            for (let i = 0; i < count; i++) {
+                const angle = rnd() * 2 * Math.PI;
+                const radius = spawnRadiusMin + rnd() * (spawnRadiusMax - spawnRadiusMin);
+                const x = modWrap(player.x + Math.cos(angle) * radius, MAP_SIZE);
+                const z = modWrap(player.z + Math.sin(angle) * radius, MAP_SIZE);
+
+                const chunkX = Math.floor(x / CHUNK_SIZE);
+                const chunkZ = Math.floor(z / CHUNK_SIZE);
+                const chunkKey = `${chunkX},${chunkZ}`;
+                const chunk = chunkManager.chunks.get(chunkKey);
+
+                if (chunk && chunk.generated) {
+                    const m = new Mob(x, z);
+                    mobs.push(m);
                 }
             }
         }
         function isSolid(id, forMobs = false) {
-            if (forMobs) {
-                return id !== 0 && id !== 6 && id !== 12 && id !== 8; // Leaves are not solid for mobs
+            const nonSolidForEveryone = [0, 6, 12, 8, 16, 17, 100, 101, 102, 103, 104, 111, 112, 113, 114, 116, 117, 120];
+            if (nonSolidForEveryone.includes(id)) {
+                return false;
             }
-            return id !== 0 && id !== 6 && id !== 12;
+            if (forMobs) {
+                // Mobs can pass through leaves (8)
+                if (id === 8) return false;
+            }
+            return true;
         }
         function checkCollisionWithBlock(newX, newY, newZ) {
             var minX = newX - 0.45;
@@ -4649,6 +4824,11 @@ self.onmessage = async function(e) {
                 }
                 if (e.key.toLowerCase() === 'e') {
                     onPointerDown({ button: 2, preventDefault: () => { } });
+                }
+                if (e.key.toLowerCase() === 'g') {
+                    const mobRnd = makeSeededRandom(worldSeed + '_mobs' + Date.now());
+                    spawnMobs(1, mobRnd);
+                    addMessage('Spawned a mob for testing.', 1500);
                 }
             }
             function keyupHandler(e) { keys[e.key.toLowerCase()] = false; }
@@ -5336,45 +5516,17 @@ self.onmessage = async function(e) {
                             }
                             break;
                         case 'mob_update':
+                            // Received from host. Update local mob state.
                             let mob = mobs.find(m => m.id === data.id);
                             if (!mob) {
-                                mob = new Mob(data.x, data.z, data.id, data.isAggressive);
+                                mob = new Mob(data.x, data.z, data.id);
                                 mobs.push(mob);
                             }
                             mob.pos.set(data.x, data.y, data.z);
-                            mob.hp = data.hp;
+                            if (data.rotationY) {
+                                mob.mesh.rotation.y = data.rotationY;
+                            }
                             mob.isAggressive = data.isAggressive;
-                            mob.laserActive = data.laserActive;
-                            if (data.laserTarget) {
-                                mob.laserTarget.set(data.laserTarget.x, data.laserTarget.y, data.laserTarget.z);
-                            }
-
-                            if (mob.laserActive && !mob.laserBeam) {
-                                const material = new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0.5 });
-                                const geometry = new THREE.CylinderGeometry(0.1, 0.1, 1, 8);
-                                mob.laserBeam = new THREE.Mesh(geometry, material);
-                                scene.add(mob.laserBeam);
-                            } else if (!mob.laserActive && mob.laserBeam) {
-                                scene.remove(mob.laserBeam);
-                                mob.laserBeam.geometry.dispose();
-                                mob.laserBeam.material.dispose();
-                                mob.laserBeam = null;
-                            }
-
-                            if (mob.laserBeam) {
-                                const start = mob.mesh.position.clone().add(new THREE.Vector3(0, 1.2, 0));
-                                const end = mob.laserTarget;
-                                const distance = start.distanceTo(end);
-                                mob.laserBeam.scale.y = distance;
-                                mob.laserBeam.position.copy(start).lerp(end, 0.5);
-                                const dir = new THREE.Vector3().subVectors(end, start).normalize();
-                                const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-                                mob.laserBeam.quaternion.copy(quat);
-                            }
-
-                            if (data.flash) {
-                                mob.flashEnd = Date.now() + 200;
-                            }
                             break;
                         case 'mob_kill':
                             // Received from host. Remove mob locally.
@@ -6444,7 +6596,6 @@ self.onmessage = async function(e) {
                         knownWorlds.get(worldName).users.add(userName);
                     }
                     keywordCache.set(userAddress, userWorldKey);
-                    isHost = true; // Assume host mode for single player
                     document.getElementById('loginOverlay').style.display = 'none';
                     document.getElementById('hud').style.display = 'block';
                     document.getElementById('hotbar').style.display = 'flex';
@@ -6479,10 +6630,8 @@ self.onmessage = async function(e) {
                     console.log('[Login] Preloading initial chunks');
                     chunkManager.preloadChunks(spawnCx, spawnCz, LOAD_RADIUS);
                     console.log('[Login] Spawning mobs');
-                    const mobBehaviorRnd = makeSeededRandom(worldSeed + '_mob_behavior');
-                    const worldIsAggressive = mobBehaviorRnd() > 0.5;
                     const mobRnd = makeSeededRandom(worldSeed + '_mobs');
-                    spawnMobs(12, mobRnd, worldIsAggressive);
+                    // spawnMobs(12, mobRnd);
                     setupMobile();
                     initMinimap();
                     updateHotbarUI();
@@ -6506,7 +6655,6 @@ self.onmessage = async function(e) {
                     lastRegenTime = lastFrame;
                     var unregisterKeyEvents = registerKeyEvents();
                     console.log('[Login] Starting game loop');
-                    setInterval(manageMobPopulation, 5000);
                     requestAnimationFrame(gameLoop);
                     addMessage('Welcome — world wraps at edges. Toggle camera with T. Good luck!', 5000);
                     var healthElement = document.getElementById('health');
@@ -6936,6 +7084,7 @@ self.onmessage = async function(e) {
             });
             console.log('[Minimap] Events attached: double-click and drag-and-drop enabled');
         }
+        let lastMobCheck = 0;
         function gameLoop(now) {
             if (isDying) {
                 const fallDuration = 1500; // 1.5 seconds for a more dramatic fall
@@ -6978,10 +7127,7 @@ self.onmessage = async function(e) {
             if (deathScreenShown) {
                 mobs.forEach(function (m) { m.update(dt); });
                 updateSky(dt);
-                if (now - lastMinimapUpdateTime > 250) {
-                    updateMinimap();
-                    lastMinimapUpdateTime = now;
-                }
+                updateMinimap();
                 var scoreElement = document.getElementById('score');
                 if (scoreElement) scoreElement.innerText = player.score;
                 renderer.render(scene, camera);
@@ -7113,10 +7259,6 @@ self.onmessage = async function(e) {
                 chunkManager.update(player.x, player.z);
                 mobs.forEach(function (m) { m.update(dt); });
                 updateSky(dt);
-                if (now - lastMinimapUpdateTime > 250) {
-                    updateMinimap();
-                    lastMinimapUpdateTime = now;
-                }
 
                 // Make skybox elements follow the camera
                 if (stars) stars.position.copy(camera.position);
@@ -7142,7 +7284,11 @@ self.onmessage = async function(e) {
                     }
                     particleSystem.geometry.attributes.position.needsUpdate = true;
                 }
-
+                if (now - lastMobCheck > 5000) {
+                    manageMobPopulation();
+                    lastMobCheck = now;
+                }
+                updateMinimap();
                 var posLabel = document.getElementById('posLabel');
                 if (posLabel) posLabel.innerText = Math.floor(player.x) + ', ' + Math.floor(player.y) + ', ' + Math.floor(player.z);
                 if (cameraMode === 'third') {
