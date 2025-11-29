@@ -869,3 +869,102 @@
                 box-shadow: 0 0 10px 3px rgba(255, 209, 102, 0.7);
             }
         }
+
+/* New Mobile Controls */
+#mobileInterface {
+    position: fixed;
+    inset: 0;
+    pointer-events: none; /* Let clicks pass through, children will re-enable */
+    z-index: 190;
+}
+
+#mobileJoystickZone {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 50%;
+    height: 100%;
+    pointer-events: auto;
+    touch-action: none;
+}
+
+#mobileJoystickKnob {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.5);
+    transform: translate(-50%, -50%);
+    display: none;
+    pointer-events: none;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    border: 2px solid rgba(255, 255, 255, 0.8);
+}
+
+#mobileLookZone {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 50%;
+    height: 100%;
+    pointer-events: auto;
+    touch-action: none;
+}
+
+#mobileButtons {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    pointer-events: auto;
+    align-items: flex-end;
+}
+
+.m-action-btn {
+    width: 60px;
+    height: 60px;
+    border-radius: 30px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 18px;
+    user-select: none;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: transform 0.1s, background 0.1s;
+}
+
+.m-action-btn:active {
+    background: rgba(255, 209, 102, 0.5);
+    transform: scale(0.95);
+    border-color: var(--accent);
+    color: #111;
+}
+
+#mobileJumpBtn {
+    background: rgba(200, 200, 200, 0.3);
+}
+
+#mobileSprintBtn {
+    background: rgba(200, 200, 200, 0.3);
+}
+
+/* Hide old controls if they still exist in CSS but are removed from HTML */
+#mobileControls, #mobileRight {
+    display: none !important;
+}
+
+/* Adjustments for landscape mobile */
+@media (max-height: 500px) and (orientation: landscape) {
+    #mobileButtons {
+        flex-direction: row;
+        bottom: 20px;
+        right: 80px; /* Make space for other UI */
+    }
+}
