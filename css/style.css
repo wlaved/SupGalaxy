@@ -968,3 +968,145 @@
         right: 80px; /* Make space for other UI */
     }
 }
+
+/* Update Mobile Controls */
+#mobileInterface {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 170; /* Below HUD (180), Hotbar (190), etc. */
+}
+
+#mobileJoystickZone {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 50%;
+    height: 100%;
+    pointer-events: auto;
+    touch-action: none;
+    z-index: 50; /* Above canvas, below everything else */
+}
+
+#mobileJoystickKnob {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.5);
+    transform: translate(-50%, -50%);
+    display: none;
+    pointer-events: none;
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    border: 2px solid rgba(255, 255, 255, 0.8);
+}
+
+#mobileLookZone {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 50%;
+    height: 100%;
+    pointer-events: auto;
+    touch-action: none;
+    z-index: 50; /* Above canvas, below HUD */
+}
+
+#mobileButtonsLeft {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    pointer-events: auto;
+    align-items: flex-start;
+    z-index: 195; /* Above Hotbar (190) */
+}
+
+#mobileButtonsRight {
+    position: fixed;
+    bottom: 80px; /* Moved up to clear potentially wide hotbar */
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    pointer-events: auto;
+    align-items: flex-end;
+    z-index: 195;
+}
+
+.m-action-btn {
+    width: 50px; /* Shrunk slightly from 60 */
+    height: 50px;
+    border-radius: 25px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 16px;
+    user-select: none;
+    cursor: pointer;
+    backdrop-filter: blur(4px);
+    transition: transform 0.1s, background 0.1s;
+}
+
+.m-action-btn:active {
+    background: rgba(255, 209, 102, 0.5);
+    transform: scale(0.95);
+    border-color: var(--accent);
+    color: #111;
+}
+
+#mobileJumpBtn {
+    background: rgba(200, 200, 200, 0.3);
+}
+
+#mobileSprintBtn {
+    background: rgba(200, 200, 200, 0.3);
+}
+
+/* Shrink hotbar in mobile mode */
+.mobile-hotbar .hot-slot {
+    width: 35px; /* Shrunk from 10% or 50px */
+    padding-bottom: 35px;
+    height: 0;
+    border-radius: 6px;
+}
+
+.mobile-hotbar .hot-slot-content {
+    /* No change needed, absolute pos */
+}
+
+.mobile-hotbar .hot-label {
+    font-size: 8px; /* Smaller font */
+}
+
+.mobile-hotbar .hot-count {
+    font-size: 8px;
+    bottom: 1px;
+    right: 1px;
+    padding: 1px 2px;
+}
+
+/* Hide old controls if they still exist in CSS but are removed from HTML */
+#mobileControls, #mobileRight {
+    display: none !important;
+}
+
+/* Adjustments for landscape mobile */
+@media (max-height: 500px) and (orientation: landscape) {
+    #mobileButtonsRight {
+        flex-direction: row;
+        bottom: 20px;
+        right: 20px;
+    }
+    #mobileButtonsLeft {
+        flex-direction: row;
+        bottom: 20px;
+        left: 20px;
+    }
+}
