@@ -528,7 +528,9 @@ function initHotbar() {
             document.querySelectorAll(".hot-slot").forEach((function(e) {
                 e.classList.remove("active")
             })), this.classList.add("active"), selectedHotIndex = parseInt(this.dataset.index), updateHotbarUI();
-            if ("flex" === document.getElementById("mobileControls").style.display) {
+            // Trigger place action if mobile controls are active
+            const mobileControls = document.getElementById("newMobileControls");
+            if (mobileControls && mobileControls.style.display === "block") {
                 onPointerDown({
                     button: 2,
                     preventDefault: () => {}
@@ -2525,35 +2527,203 @@ function isMobile() {
 }
 
 function setupMobile() {
-    if (isMobile()) {
-        var e = document.getElementById("mUp"),
-            t = document.getElementById("mDown"),
-            o = document.getElementById("mLeft"),
-            a = document.getElementById("mRight");
-        e.addEventListener("touchstart", (function (e) {
-            joystick.up = !0, e.preventDefault()
-        })), e.addEventListener("touchend", (function (e) {
-            joystick.up = !1, e.preventDefault()
-        })), t.addEventListener("touchstart", (function (e) {
-            joystick.down = !0, e.preventDefault()
-        })), t.addEventListener("touchend", (function (e) {
-            joystick.down = !1, e.preventDefault()
-        })), o.addEventListener("touchstart", (function (e) {
-            joystick.left = !0, e.preventDefault()
-        })), o.addEventListener("touchend", (function (e) {
-            joystick.left = !1, e.preventDefault()
-        })), a.addEventListener("touchstart", (function (e) {
-            joystick.right = !0, e.preventDefault()
-        })), a.addEventListener("touchend", (function (e) {
-            joystick.right = !1, e.preventDefault()
-        })), document.getElementById("mJump").addEventListener("touchstart", (function (e) {
-            playerJump(), e.preventDefault()
-        })), document.getElementById("mInventory").addEventListener("touchstart", (function (e) {
-            toggleInventory(), e.preventDefault()
-        })), document.getElementById("mCam").addEventListener("touchstart", (function (e) {
-            toggleCameraMode(), e.preventDefault()
-        }))
-    }
+    if (!isMobile()) return;
+
+    const leftZone = document.getElementById("mobileZoneLeft");
+    const rightZone = document.getElementById("mobileZoneRight");
+    const joystickKnob = document.getElementById("joystickKnob");
+    let joystickOrigin = null;
+    let rightTouchStart = null;
+    let rightTouchStartTime = 0;
+    let isLooking = false;
+    let tapTimer = null;
+
+    // Joystick Logic (Left Zone)
+    leftZone.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        joystickOrigin = { x: touch.clientX, y: touch.clientY };
+        joystickKnob.style.display = "block";
+        joystickKnob.style.left = touch.clientX + "px";
+        joystickKnob.style.top = touch.clientY + "px";
+    }, { passive: false });
+
+    leftZone.addEventListener("touchmove", (e) => {
+        e.preventDefault();
+        if (!joystickOrigin) return;
+        const touch = e.changedTouches[0];
+        const dx = touch.clientX - joystickOrigin.x;
+        const dy = touch.clientY - joystickOrigin.y;
+
+        // Update knob position
+        const distance = Math.min(50, Math.hypot(dx, dy));
+        const angle = Math.atan2(dy, dx);
+        const knobX = joystickOrigin.x + distance * Math.cos(angle);
+        const knobY = joystickOrigin.y + distance * Math.sin(angle);
+        joystickKnob.style.left = knobX + "px";
+        joystickKnob.style.top = knobY + "px";
+
+        // Map to joystick controls
+        const threshold = 10;
+        joystick.right = dx > threshold;
+        joystick.left = dx < -threshold;
+        joystick.down = dy > threshold;
+        joystick.up = dy < -threshold;
+    }, { passive: false });
+
+    leftZone.addEventListener("touchend", (e) => {
+        e.preventDefault();
+        joystickOrigin = null;
+        joystickKnob.style.display = "none";
+        joystick.up = false;
+        joystick.down = false;
+        joystick.left = false;
+        joystick.right = false;
+    }, { passive: false });
+
+    // Look / Action Logic (Right Zone)
+    rightZone.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        rightTouchStart = { x: touch.clientX, y: touch.clientY };
+        rightTouchStartTime = Date.now();
+        isLooking = false;
+
+        // Start timer for block breaking (long press)
+        tapTimer = setTimeout(() => {
+            if (!isLooking) {
+                // Trigger break action
+                onPointerDown({ button: 0, preventDefault: () => {} });
+            }
+        }, 500); // 500ms for long press
+    }, { passive: false });
+
+    rightZone.addEventListener("touchmove", (e) => {
+        e.preventDefault();
+        if (!rightTouchStart) return;
+        const touch = e.changedTouches[0];
+        const dx = touch.clientX - rightTouchStart.x;
+        const dy = touch.clientY - rightTouchStart.y;
+
+        if (Math.hypot(dx, dy) > 5) {
+            isLooking = true;
+            clearTimeout(tapTimer); // Cancel tap/hold if moving
+
+            const sensitivity = 0.005;
+            player.yaw -= dx * sensitivity;
+            player.pitch -= dy * sensitivity;
+            player.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, player.pitch));
+            camera.rotation.set(player.pitch, player.yaw, 0, "YXZ");
+            if (avatarGroup && avatarGroup.children[3]) {
+                avatarGroup.children[3].rotation.set(player.pitch, 0, 0);
+            }
+
+            rightTouchStart = { x: touch.clientX, y: touch.clientY };
+        }
+    }, { passive: false });
+
+    rightZone.addEventListener("touchend", (e) => {
+        e.preventDefault();
+        clearTimeout(tapTimer);
+
+        if (!isLooking) {
+            const touchDuration = Date.now() - rightTouchStartTime;
+            if (touchDuration < 500) {
+                // Short tap: Interact / Place
+                // We need to raycast from the center of the screen or tap position?
+                // Mobile look usually centers the cursor. Let's use the center raycast logic embedded in onPointerDown(button 2)
+                // or check for usable objects.
+
+                // Raycast for usable objects
+                raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+                const intersects = raycaster.intersectObjects(scene.children, true);
+                let interacted = false;
+
+                // Check for magician/calligraphy stones interaction first (handled in onPointerDown logic usually)
+                // But we can manually trigger it.
+                // Simulating a click/interaction
+
+                // For placing blocks (if holding one), use button 2 logic
+                const heldItem = INVENTORY[selectedHotIndex];
+                if (heldItem && BLOCKS[heldItem.id]) {
+                     onPointerDown({ button: 2, preventDefault: () => {} });
+                } else {
+                     // If hand is empty, try to interact (button 0 logic for interaction usually falls through to break)
+                     // But we want to avoid breaking on tap.
+                     // onPointerDown(0) breaks blocks.
+                     // Maybe we should only trigger interaction logic if we hit something interactive?
+                     // Currently interaction (stones) is in onPointerDown(0 or 2?)
+                     // onPointerDown checks interactions first.
+
+                     // Let's call onPointerDown with a special flag or just rely on its order.
+                     // Problem: onPointerDown(0) breaks blocks if no interaction.
+                     // We want TAP to be INTERACT only.
+
+                     // Let's modify onPointerDown to handle "tap" vs "break"?
+                     // Or just manually check interactions here.
+
+                     // Reuse onPointerDown but prevent block breaking?
+                     // Hard to pass extra args to onPointerDown as it expects Event.
+                     // Let's just trigger it and see. If it breaks a block immediately, that's bad.
+                     // onPointerDown breaks block immediately.
+
+                     // We need to refactor onPointerDown or duplicate interaction logic.
+                     // Or, we accept that "Tap" places blocks (Right Click) and "Hold" breaks (Left Click).
+                     // But user said "make usable objects usable by tapping".
+                     // Usable objects (stones) are clicked in onPointerDown.
+
+                     // Let's try sending a simulated Left Click (0).
+                     // But onPointerDown(0) breaks blocks.
+                     // The user said: "don't break the blocks unless tapped and held down".
+                     // So we should NOT call onPointerDown(0) on short tap if it targets a block.
+
+                     // We should raycast here.
+                     const magicianMeshes = Object.values(magicianStones).map(s => s.mesh);
+                     const calligraphyMeshes = Object.values(calligraphyStones).map(s => s.mesh);
+                     const interactables = [...magicianMeshes, ...calligraphyMeshes];
+
+                     const interactIntersects = raycaster.intersectObjects(interactables, true);
+                     if (interactIntersects.length > 0) {
+                         // Hit a usable object! Trigger interaction.
+                         onPointerDown({ button: 0, preventDefault: () => {} });
+                     } else {
+                         // Didn't hit a usable object.
+                         // Maybe place block?
+                         onPointerDown({ button: 2, preventDefault: () => {} });
+                     }
+                }
+            }
+        }
+
+        rightTouchStart = null;
+        isLooking = false;
+    }, { passive: false });
+
+    // Buttons
+    document.getElementById("mJump").addEventListener("touchstart", (e) => {
+        playerJump();
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    document.getElementById("mSprint").addEventListener("touchstart", (e) => {
+        isSprinting = !isSprinting;
+        addMessage(isSprinting ? "Sprinting enabled" : "Sprinting disabled", 1500);
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    document.getElementById("mInventory").addEventListener("touchstart", (e) => {
+        toggleInventory();
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    document.getElementById("mCam").addEventListener("touchstart", (e) => {
+        toggleCameraMode();
+        e.preventDefault();
+        e.stopPropagation();
+    });
 }
 
 function updateLoginUI() {
@@ -3808,16 +3978,15 @@ function handleResizeAndOrientation() {
     const isSmallScreen = window.innerWidth < 700;
 
     const hud = document.getElementById('hud');
-    const mobileControls = document.getElementById('mobileControls');
-    const mobileRight = document.getElementById('mobileRight');
     const hotbar = document.getElementById('hotbar');
     const rightPanel = document.getElementById('rightPanel');
     const mobileModeToggle = document.getElementById('mobileModeToggle');
 
+    const newMobileControls = document.getElementById('newMobileControls');
+
     if (isSmallScreen && isPortrait) {
         hud.style.display = 'none';
-        mobileControls.style.display = 'flex';
-        mobileRight.style.display = 'flex';
+        newMobileControls.style.display = 'block';
         hotbar.classList.add('mobile-hotbar');
         updateHotbarSlots(4);
         mobileModeToggle.style.display = 'none';
@@ -3825,13 +3994,11 @@ function handleResizeAndOrientation() {
         mobileModeToggle.style.display = 'block';
         if (mobileModeActive) {
             hud.style.display = 'none';
-            mobileControls.style.display = 'flex';
-            mobileRight.style.display = 'flex';
+            newMobileControls.style.display = 'block';
             rightPanel.classList.add('minimap-small');
         } else {
             hud.style.display = 'block';
-            mobileControls.style.display = 'none';
-            mobileRight.style.display = 'none';
+            newMobileControls.style.display = 'none';
             rightPanel.classList.remove('minimap-small');
         }
         hotbar.classList.remove('mobile-hotbar');

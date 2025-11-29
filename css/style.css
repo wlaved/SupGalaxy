@@ -483,38 +483,6 @@
             border-radius: 2px;
         }
 
-        #mobileControls {
-            position: fixed;
-            left: 20px;
-            bottom: 80px;
-            z-index: 195;
-            display: none;
-            gap: 8px;
-        }
-
-        .m-btn {
-            width: 56px;
-            height: 56px;
-            border-radius: 12px;
-            background: rgba(0,0,0,0.45);
-            border: 1px solid rgba(255,255,255,0.04);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 700;
-            color: #fff;
-        }
-
-        #mobileRight {
-            position: fixed;
-            right: 20px;
-            bottom: 80px;
-            z-index: 195;
-            display: none;
-            gap: 8px;
-            flex-direction: column;
-        }
-
         @media (max-width:700px) {
             #emojiGrid {
                 grid-template-columns: repeat(4, 1fr);
@@ -791,8 +759,8 @@
         }
 
         @media (max-width: 700px) and (orientation: portrait) {
-            #mobileControls, #mobileRight {
-                display: flex;
+            #newMobileControls {
+                display: block;
             }
 
             #hud {

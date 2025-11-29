@@ -20,6 +20,7 @@
     <meta property="og:type" content="website">
     <title>SupGalaxy v0.5.15-beta</title>
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/mobile.css">
 </head>
 <body>
     <script src="lib/three.min.js"></script>
@@ -177,16 +178,20 @@
         <p>You died! All items lost.</p>
         <button id="respawnBtn">Continue</button>
     </div>
-    <div id="mobileControls">
-        <div class="m-btn" id="mUp">↑</div>
-        <div class="m-btn" id="mLeft">←</div>
-        <div class="m-btn" id="mDown">↓</div>
-        <div class="m-btn" id="mRight">→</div>
-    </div>
-    <div id="mobileRight">
-        <div class="m-action" id="mJump">J</div>
-        <div class="m-action" id="mInventory">I</div>
-        <div class="m-action" id="mCam">T</div>
+    <div id="newMobileControls" style="display: none;">
+        <div id="mobileZoneLeft"></div>
+        <div id="mobileZoneRight"></div>
+        <div id="joystickKnob"></div>
+        <div id="mobileButtonsRight">
+             <div class="mobile-btn-row">
+                 <div class="m-action" id="mSprint">🏃</div>
+                 <div class="m-action" id="mJump">🦘</div>
+             </div>
+             <div class="mobile-btn-row">
+                <div class="m-action" id="mInventory">🎒</div>
+                <div class="m-action" id="mCam">👁️</div>
+             </div>
+        </div>
     </div>
     <div id="crosshair">+</div>
     <div id="damageFlash" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255, 0, 0, 0); pointer-events: none; z-index: 9999; transition: background 0.1s;"></div>
