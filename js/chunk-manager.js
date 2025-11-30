@@ -92,6 +92,8 @@ function buildGreedyMesh(e, t, o) {
     for (const e in a) {
         const t = a[e];
         if (t.geometries.length > 0) {
+            // Skip mesh generation for Chest (131) as it uses a custom mesh
+            if (t.blockId === 131) continue;
             const e = THREE.BufferGeometryUtils.mergeBufferGeometries(t.geometries);
             if (!e) continue;
             const o = BLOCKS[t.blockId];
