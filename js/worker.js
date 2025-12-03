@@ -11,7 +11,7 @@ const ARCHETYPES = {
         gravity: 16.0,
         skyType: 'earth',
         mobSpawnRules: { day: ['bee'], night: ['crawley'] },
-        terrainGenerator: 'generateStandardTerrain',
+        terrainGenerator: 'generateEarthTerrain',
         biomeModifications: {},
         flora: ['trees', 'flowers', 'hives']
     },
@@ -90,6 +90,7 @@ const BLOCKS = {
         121: { name: 'Laser Gun', color: '#ff0000', hand_attachable: true },
         122: { name: 'Honey', color: '#ffb74a' },
         123: { name: 'Hive', color: '#e3c27d' },
+        124: { name: 'Iron Ore', color: '#d1b08d' },
         125: { name: 'Emerald', color: '#00ff7b' },
         126: { name: 'Green Laser Gun', color: '#00ff00', hand_attachable: true },
         127: { name: "Magician's Stone", color: "#8A2BE2" },
@@ -104,6 +105,26 @@ const BIOMES = [
         { key: 'mountain', palette: [4, 11, 3, 15, 1], heightScale: 10.5, roughness: 0.6, featureDensity: 0.01 },
         { key: 'swamp', palette: [2, 3, 6, 14, 13], heightScale: 0.5, roughness: 0.2, featureDensity: 0.04 },
 ];
+
+// Block Constants
+const BLOCK_BEDROCK = 1;
+const BLOCK_GRASS = 2;
+const BLOCK_DIRT = 3;
+const BLOCK_STONE = 4;
+const BLOCK_SAND = 5;
+const BLOCK_WATER = 6;
+const BLOCK_WOOD = 7;
+const BLOCK_LEAVES = 8;
+const BLOCK_CACTUS = 9;
+const BLOCK_SNOW = 10;
+const BLOCK_COAL = 11;
+const BLOCK_FLOWER = 12;
+const BLOCK_LAVA = 16;
+const BLOCK_ICE = 17;
+const BLOCK_OBSIDIAN = 110;
+const BLOCK_CRYSTAL_BLUE = 111;
+const BLOCK_IRON_ORE = 124;
+const BLOCK_EMERALD = 125;
 
 function makeSeededRandom(seed) {
         var h = 2166136261 >>> 0;
@@ -145,6 +166,381 @@ function fbm(noiseFn, x, y, oct, persistence) {
             freq *= 2;
         }
         return sum / max;
+}
+
+// --- Simplex Noise Implementation (3D support + Gradients) ---
+// Based on standard Simplex Noise implementations
+const SimplexNoise = (function() {
+    function SimplexNoise(seedStr) {
+        var F2 = 0.5 * (Math.sqrt(3.0) - 1.0);
+        var G2 = (3.0 - Math.sqrt(3.0)) / 6.0;
+        var F3 = 1.0 / 3.0;
+        var G3 = 1.0 / 6.0;
+        var p = new Uint8Array(256);
+        var perm = new Uint8Array(512);
+        var permMod12 = new Uint8Array(512);
+        var grad3 = new Float32Array([1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1, 0, 1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, -1, 0, 1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1]);
+
+        var rnd = makeSeededRandom(seedStr || 'simplex');
+        for (var i = 0; i < 256; i++) p[i] = Math.floor(rnd() * 256);
+        for (var i = 0; i < 512; i++) {
+            perm[i] = p[i & 255];
+            permMod12[i] = (perm[i] % 12) * 3;
+        }
+
+        this.noise2D = function(xin, yin) {
+            var n0, n1, n2;
+            var s = (xin + yin) * F2;
+            var i = Math.floor(xin + s);
+            var j = Math.floor(yin + s);
+            var t = (i + j) * G2;
+            var X0 = i - t;
+            var Y0 = j - t;
+            var x0 = xin - X0;
+            var y0 = yin - Y0;
+            var i1, j1;
+            if (x0 > y0) { i1 = 1; j1 = 0; } else { i1 = 0; j1 = 1; }
+            var x1 = x0 - i1 + G2;
+            var y1 = y0 - j1 + G2;
+            var x2 = x0 - 1.0 + 2.0 * G2;
+            var y2 = y0 - 1.0 + 2.0 * G2;
+            var ii = i & 255;
+            var jj = j & 255;
+            var gi0 = permMod12[ii + perm[jj]];
+            var gi1 = permMod12[ii + i1 + perm[jj + j1]];
+            var gi2 = permMod12[ii + 1 + perm[jj + 1]];
+            var t0 = 0.5 - x0 * x0 - y0 * y0;
+            if (t0 < 0) n0 = 0.0;
+            else { t0 *= t0; n0 = t0 * t0 * (grad3[gi0] * x0 + grad3[gi0 + 1] * y0); }
+            var t1 = 0.5 - x1 * x1 - y1 * y1;
+            if (t1 < 0) n1 = 0.0;
+            else { t1 *= t1; n1 = t1 * t1 * (grad3[gi1] * x1 + grad3[gi1 + 1] * y1); }
+            var t2 = 0.5 - x2 * x2 - y2 * y2;
+            if (t2 < 0) n2 = 0.0;
+            else { t2 *= t2; n2 = t2 * t2 * (grad3[gi2] * x2 + grad3[gi2 + 1] * y2); }
+            return 70.0 * (n0 + n1 + n2);
+        };
+
+        this.noise3D = function(xin, yin, zin) {
+            var n0, n1, n2, n3;
+            var s = (xin + yin + zin) * F3;
+            var i = Math.floor(xin + s);
+            var j = Math.floor(yin + s);
+            var k = Math.floor(zin + s);
+            var t = (i + j + k) * G3;
+            var X0 = i - t;
+            var Y0 = j - t;
+            var Z0 = k - t;
+            var x0 = xin - X0;
+            var y0 = yin - Y0;
+            var z0 = zin - Z0;
+            var i1, j1, k1, i2, j2, k2;
+            if (x0 >= y0) {
+                if (y0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+                else if (x0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 0; k2 = 1; }
+                else { i1 = 0; j1 = 0; k1 = 1; i2 = 1; j2 = 0; k2 = 1; }
+            } else {
+                if (y0 < z0) { i1 = 0; j1 = 0; k1 = 1; i2 = 0; j2 = 1; k2 = 1; }
+                else if (x0 < z0) { i1 = 0; j1 = 1; k1 = 0; i2 = 0; j2 = 1; k2 = 1; }
+                else { i1 = 0; j1 = 1; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+            }
+            var x1 = x0 - i1 + G3;
+            var y1 = y0 - j1 + G3;
+            var z1 = z0 - k1 + G3;
+            var x2 = x0 - i2 + 2.0 * G3;
+            var y2 = y0 - j2 + 2.0 * G3;
+            var z2 = z0 - k2 + 2.0 * G3;
+            var x3 = x0 - 1.0 + 3.0 * G3;
+            var y3 = y0 - 1.0 + 3.0 * G3;
+            var z3 = z0 - 1.0 + 3.0 * G3;
+            var ii = i & 255;
+            var jj = j & 255;
+            var kk = k & 255;
+            var gi0 = permMod12[ii + perm[jj + perm[kk]]];
+            var gi1 = permMod12[ii + i1 + perm[jj + j1 + perm[kk + k1]]];
+            var gi2 = permMod12[ii + i2 + perm[jj + j2 + perm[kk + k2]]];
+            var gi3 = permMod12[ii + 1 + perm[jj + 1 + perm[kk + 1]]];
+            var t0 = 0.6 - x0 * x0 - y0 * y0 - z0 * z0;
+            if (t0 < 0) n0 = 0.0;
+            else { t0 *= t0; n0 = t0 * t0 * (grad3[gi0] * x0 + grad3[gi0 + 1] * y0 + grad3[gi0 + 2] * z0); }
+            var t1 = 0.6 - x1 * x1 - y1 * y1 - z1 * z1;
+            if (t1 < 0) n1 = 0.0;
+            else { t1 *= t1; n1 = t1 * t1 * (grad3[gi1] * x1 + grad3[gi1 + 1] * y1 + grad3[gi1 + 2] * z1); }
+            var t2 = 0.6 - x2 * x2 - y2 * y2 - z2 * z2;
+            if (t2 < 0) n2 = 0.0;
+            else { t2 *= t2; n2 = t2 * t2 * (grad3[gi2] * x2 + grad3[gi2 + 1] * y2 + grad3[gi2 + 2] * z2); }
+            var t3 = 0.6 - x3 * x3 - y3 * y3 - z3 * z3;
+            if (t3 < 0) n3 = 0.0;
+            else { t3 *= t3; n3 = t3 * t3 * (grad3[gi3] * x3 + grad3[gi3 + 1] * y3 + grad3[gi3 + 2] * z3); }
+            return 32.0 * (n0 + n1 + n2 + n3);
+        };
+    }
+    return SimplexNoise;
+})();
+
+// Helper to get noise with finite difference gradient
+function noiseGrad(simplex, x, y) {
+    const e = 0.01;
+    const v = simplex.noise2D(x, y);
+    const vx = simplex.noise2D(x + e, y);
+    const vy = simplex.noise2D(x, y + e);
+    // Approximate gradient
+    return {
+        value: v,
+        gx: (vx - v) / e,
+        gy: (vy - v) / e
+    };
+}
+
+// --- New Earth Generation Logic ---
+
+const EARTH_BIOMES = {
+    JUNGLE: { id: 'jungle', density: 0.5, scale: 2.0, verticalStretch: 1.5, caveThreshold: 0.6, heightBase: 20, heightAmp: 40 },
+    FOREST: { id: 'forest', density: 0.5, scale: 1.0, verticalStretch: 1.0, caveThreshold: 0.5, heightBase: 15, heightAmp: 30 },
+    PLAINS: { id: 'plains', density: 0.4, scale: 1.0, verticalStretch: 0.8, caveThreshold: 0.4, heightBase: 10, heightAmp: 15 },
+    MOUNTAIN: { id: 'mountain', density: 0.6, scale: 2.0, verticalStretch: 2.0, caveThreshold: 0.7, heightBase: 50, heightAmp: 100 },
+    OCEAN: { id: 'ocean', density: 0.8, scale: 1.5, verticalStretch: 1.0, caveThreshold: 0.8, heightBase: 5, heightAmp: 10 }, // Often underwater
+    SNOW: { id: 'snow', density: 0.5, scale: 1.2, verticalStretch: 1.0, caveThreshold: 0.5, heightBase: 30, heightAmp: 50 },
+    DESERT: { id: 'desert', density: 0.6, scale: 1.0, verticalStretch: 1.0, caveThreshold: 0.5, heightBase: 15, heightAmp: 25 },
+};
+
+function getBiome(temp, humid, heightNoise) {
+    if (heightNoise > 0.6) return EARTH_BIOMES.MOUNTAIN;
+    if (heightNoise < -0.3) return EARTH_BIOMES.OCEAN;
+
+    if (temp > 0.5) {
+        if (humid > 0.3) return EARTH_BIOMES.JUNGLE;
+        if (humid < -0.3) return EARTH_BIOMES.DESERT;
+        return EARTH_BIOMES.PLAINS;
+    } else if (temp < -0.5) {
+        return EARTH_BIOMES.SNOW;
+    } else {
+        if (humid > 0.2) return EARTH_BIOMES.FOREST;
+        return EARTH_BIOMES.PLAINS;
+    }
+}
+
+function generateEarthTerrain(chunkData, chunkKey, archetype) {
+    const worldSeed = chunkKey.split(':')[0];
+    const cx = parseInt(chunkKey.split(':')[1]);
+    const cz = parseInt(chunkKey.split(':')[2]);
+    const baseX = cx * CHUNK_SIZE;
+    const baseZ = cz * CHUNK_SIZE;
+
+    // Initialize Simplex Noise instances
+    const noise = new SimplexNoise(worldSeed);
+    const biomeTempNoise = new SimplexNoise(worldSeed + '_temp');
+    const biomeHumidNoise = new SimplexNoise(worldSeed + '_humid');
+    const caveNoiseRidged = new SimplexNoise(worldSeed + '_cave_ridged');
+    const caveNoiseCheese = new SimplexNoise(worldSeed + '_cave_cheese');
+    const islandNoise = new SimplexNoise(worldSeed + '_island');
+    const islandDetailNoise = new SimplexNoise(worldSeed + '_island_detail');
+    const treeNoise = new SimplexNoise(worldSeed + '_trees');
+    const oreNoise = new SimplexNoise(worldSeed + '_ores');
+
+    // Cache for chunk heightmap and biome info
+    const chunkInfo = [];
+
+    // Pass 1: Surface Height & Biome
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+            const wx = baseX + lx;
+            const wz = baseZ + lz;
+
+            // Large scale coordinates
+            const nx = wx * 0.005;
+            const nz = wz * 0.005;
+
+            // Biome Selection
+            const temp = biomeTempNoise.noise2D(wx * 0.002, wz * 0.002);
+            const humid = biomeHumidNoise.noise2D(wx * 0.002, wz * 0.002);
+            const heightBias = noise.noise2D(wx * 0.001, wz * 0.001); // Large scale terrain features
+            const biome = getBiome(temp, humid, heightBias);
+
+            // Gradient Trick for Terrain Height
+            let totalHeight = 0.0;
+            let amplitude = 1.0;
+            let frequency = 0.003;
+            let sumGradient = {x: 0, y: 0};
+            const octaves = 6;
+
+            for(let i=0; i<octaves; i++) {
+                const n = noiseGrad(noise, wx * frequency, wz * frequency);
+                const erosion = 1.0 / (1.0 + (sumGradient.x * sumGradient.x + sumGradient.y * sumGradient.y));
+                totalHeight += n.value * amplitude * erosion;
+                sumGradient.x += n.gx * amplitude;
+                sumGradient.y += n.gy * amplitude;
+                amplitude *= 0.5;
+                frequency *= 2.0;
+            }
+
+            // Normalize and Apply Biome Scaling
+            // totalHeight is roughly -1 to 1 (accumulated).
+            // Shift to 0-1 range roughly.
+            let h = (totalHeight + 1) * 0.5;
+
+            // Base height + biome modifiers
+            let terrainHeight = biome.heightBase + h * biome.heightAmp;
+
+            // Ensure bounds
+            terrainHeight = Math.max(5, Math.min(MAX_HEIGHT - 30, terrainHeight));
+
+            chunkInfo.push({ height: terrainHeight, biome: biome, wx: wx, wz: wz });
+        }
+    }
+
+    // Pass 2: Block Placement (Terrain, Caves, Islands)
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+            const idx = lx * CHUNK_SIZE + lz; // Index in chunkInfo (row-major? wait, nested loop order matches)
+            // Actually, inner loop is lz, so index is lx * CHUNK_SIZE + lz
+            // Wait, previous loop: lx then lz. Push order matches.
+            // Let's be safe.
+            const info = chunkInfo[lx * CHUNK_SIZE + lz];
+            const terrainHeight = Math.floor(info.height);
+            const biome = info.biome;
+            const wx = info.wx;
+            const wz = info.wz;
+
+            // Loop Y
+            for (let y = 0; y < MAX_HEIGHT; y++) {
+                let block = BLOCK_AIR;
+
+                // 1. Base Terrain
+                if (y <= terrainHeight) {
+                     if (y === 0) block = BLOCK_BEDROCK;
+                     else if (y < terrainHeight - 3) block = BLOCK_STONE;
+                     else if (y < terrainHeight) block = BLOCK_DIRT;
+                     else {
+                         // Top soil
+                         if (biome.id === 'desert') block = BLOCK_SAND;
+                         else if (biome.id === 'snow') block = BLOCK_SNOW;
+                         else if (biome.id === 'mountain' && y > 100) block = BLOCK_SNOW;
+                         else if (biome.id === 'mountain') block = BLOCK_STONE;
+                         else block = BLOCK_GRASS;
+                     }
+                } else if (y <= SEA_LEVEL) {
+                     block = BLOCK_WATER;
+                     if (biome.id === 'swamp') block = BLOCK_WATER;
+                     if (biome.id === 'snow' && y === SEA_LEVEL) block = BLOCK_ICE;
+                }
+
+                // 2. Caves (Subtractive)
+                if (y > 5) { // Don't carve bedrock
+                    // Scale coordinates
+                    const cy = y * biome.verticalStretch;
+
+                    // Ridged Noise for Tunnels (Spaghetti)
+                    // 1.0 - abs(noise)
+                    const n1Raw = caveNoiseRidged.noise3D(wx * 0.02, cy * 0.02, wz * 0.02);
+                    const n1 = 1.0 - Math.abs(n1Raw);
+
+                    // Standard Noise for Rooms (Cheese)
+                    const n2 = caveNoiseCheese.noise3D(wx * 0.03, cy * 0.03, wz * 0.03);
+
+                    const combinedNoise = n1 + (n2 * 0.5);
+
+                    // Threshold logic
+                    const threshold = 1.3 - biome.density * 0.5; // High density = lower threshold
+                    const depthBonus = Math.max(0, (100 - y) / 200); // More caves deep down
+
+                    if (combinedNoise > (threshold - depthBonus)) {
+                         if (y <= SEA_LEVEL && block !== BLOCK_AIR) {
+                             // Flooded caves in ocean/swamp?
+                             if (biome.id === 'ocean') block = BLOCK_WATER;
+                             else block = BLOCK_AIR;
+                         } else {
+                             block = BLOCK_AIR;
+                         }
+                    }
+                }
+
+                // 3. Floating Islands (Additive)
+                if (y > 120) {
+                     const iy = y * 0.5; // Stretch vertically a bit? Or flatten?
+                     // Use standard noise threshold
+                     const islandBase = islandNoise.noise3D(wx * 0.015, y * 0.02, wz * 0.015);
+
+                     // Bias to taper off at very high altitude
+                     const heightFactor = 1.0 - ((y - 120) / 100);
+
+                     if (islandBase * heightFactor > 0.4) {
+                         // Detail pass
+                         const detail = islandDetailNoise.noise3D(wx * 0.05, y * 0.05, wz * 0.05);
+                         if (detail > -0.2) {
+                             // Determine block type for island
+                             // Top of island?
+                             // Simple check: if noise is just above threshold, it's surface.
+                             // Actually, simpler: just fill.
+                             block = BLOCK_STONE;
+
+                             // Grass on top logic? Hard without neighbor check in this loop.
+                             // We can check the noise value at y+1.
+                             const nextBase = islandNoise.noise3D(wx * 0.015, (y + 1) * 0.02, wz * 0.015);
+                             const nextHeightFactor = 1.0 - ((y + 1 - 120) / 100);
+                             if (nextBase * nextHeightFactor <= 0.4) {
+                                 block = BLOCK_GRASS;
+                             } else if (nextBase * nextHeightFactor <= 0.45) {
+                                 block = BLOCK_DIRT;
+                             }
+                         }
+                     }
+                }
+
+                // 4. Ore Generation (Modifies Stone)
+                if (block === BLOCK_STONE) {
+                    const oreVal = oreNoise.noise3D(wx * 0.1, y * 0.1, wz * 0.1);
+
+                    // COAL: Common, up to y=128. Threshold low.
+                    if (y < 128 && oreVal > 0.6) {
+                        block = BLOCK_COAL;
+                    }
+
+                    // IRON: Less common, up to y=64. Threshold higher.
+                    if (y < 64 && oreVal > 0.75) {
+                        block = BLOCK_IRON_ORE;
+                    }
+
+                    // EMERALD: Rare, up to y=32. Threshold even higher.
+                    if (y < 32 && oreVal > 0.88) {
+                        block = BLOCK_EMERALD;
+                    }
+
+                    // OBSIDIAN/CRYSTAL (Deepest): Very Rare, up to y=20.
+                    if (y < 20 && oreVal > 0.94) {
+                        block = BLOCK_OBSIDIAN;
+                        // Or crystals if desired?
+                        // if(oreVal > 0.96) block = BLOCK_CRYSTAL_BLUE;
+                    }
+                }
+
+                chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = block;
+            }
+
+            // 5. Decorations (Trees, etc.) - Simplified
+            // Check surface y again?
+            // We can place trees on the highest solid block found.
+            // Loop down from MAX_HEIGHT
+            for(let y = MAX_HEIGHT - 1; y > 0; y--) {
+                const b = chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx];
+                if (b === BLOCK_GRASS || b === BLOCK_SNOW || b === BLOCK_SAND) { // Grass, Snow, Sand
+                     // Try place tree/cactus
+                     const tVal = treeNoise.noise2D(wx * 0.8, wz * 0.8);
+                     if (tVal > 0.6) {
+                         if (biome.id === 'forest' || biome.id === 'jungle') {
+                             if (chunkData[(y+1) * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] === BLOCK_AIR) {
+                                 placeTree(chunkData, lx, y + 1, lz, () => Math.random());
+                             }
+                         }
+                         if (biome.id === 'desert' && b === BLOCK_SAND) {
+                              placeCactus(chunkData, lx, y + 1, lz, () => Math.random());
+                         }
+                     }
+                     break; // Only one surface decoration per column
+                }
+            }
+        }
+    }
 }
 
 function placeTree(chunkData, lx, cy, lz, rnd) {
@@ -455,6 +851,9 @@ function generateChunkData(chunkKey) {
         const chunkData = new Uint8Array(CHUNK_SIZE * MAX_HEIGHT * CHUNK_SIZE);
 
         switch (archetype.terrainGenerator) {
+            case 'generateEarthTerrain':
+                generateEarthTerrain(chunkData, chunkKey, archetype);
+                break;
             case 'generateStandardTerrain':
                 generateStandardTerrain(chunkData, chunkKey, archetype);
                 break;
