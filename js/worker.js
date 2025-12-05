@@ -47,7 +47,7 @@ const ARCHETYPES = {
         gravity: 30.0,
         skyType: 'earth',
         mobSpawnRules: { day: [], night: ['bee', 'crawley'] },
-        terrainGenerator: 'generateStandardTerrain',
+        terrainGenerator: 'generateMassiveTerrain',
         biomeModifications: { largeBiomes: true },
         flora: ['trees', 'flowers', 'hives']
     }
@@ -140,6 +140,53 @@ function fbm(noiseFn, x, y, oct, persistence) {
         var sum = 0, amp = 1, freq = 1, max = 0;
         for (var i = 0; i < oct; i++) {
             sum += amp * noiseFn(x * freq, y * freq);
+            max += amp;
+            amp *= persistence;
+            freq *= 2;
+        }
+        return sum / max;
+}
+
+function makeNoise3D(seed) {
+        var rnd = makeSeededRandom(seed);
+        var cache = {};
+        function corner(ix, iy, iz) {
+            var k = ix + ',' + iy + ',' + iz;
+            if (cache[k] !== undefined) return cache[k];
+            var s = seed + '|' + ix + ',' + iy + ',' + iz;
+            var r = makeSeededRandom(s)();
+            return cache[k] = r;
+        }
+        function interp(a, b, t) { return a + (b - a) * (t * (t * (3 - 2 * t))); }
+        return function (x, y, z) {
+            var ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z);
+            var fx = x - ix, fy = y - iy, fz = z - iz;
+
+            var c000 = corner(ix, iy, iz);
+            var c100 = corner(ix + 1, iy, iz);
+            var c010 = corner(ix, iy + 1, iz);
+            var c110 = corner(ix + 1, iy + 1, iz);
+            var c001 = corner(ix, iy, iz + 1);
+            var c101 = corner(ix + 1, iy, iz + 1);
+            var c011 = corner(ix, iy + 1, iz + 1);
+            var c111 = corner(ix + 1, iy + 1, iz + 1);
+
+            var x00 = interp(c000, c100, fx);
+            var x10 = interp(c010, c110, fx);
+            var x01 = interp(c001, c101, fx);
+            var x11 = interp(c011, c111, fx);
+
+            var y0 = interp(x00, x10, fy);
+            var y1 = interp(x01, x11, fy);
+
+            return interp(y0, y1, fz);
+        };
+}
+
+function fbm3d(noiseFn, x, y, z, oct, persistence) {
+        var sum = 0, amp = 1, freq = 1, max = 0;
+        for (var i = 0; i < oct; i++) {
+            sum += amp * noiseFn(x * freq, y * freq, z * freq);
             max += amp;
             amp *= persistence;
             freq *= 2;
@@ -447,6 +494,163 @@ function generateDesertTerrain(chunkData, chunkKey, archetype) {
     generateStandardTerrain(chunkData, chunkKey, archetype);
 }
 
+function generateMassiveTerrain(chunkData, chunkKey, archetype) {
+    const worldSeed = chunkKey.split(':')[0];
+    const noise = makeNoise(worldSeed);
+    const noise3d = makeNoise3D(worldSeed + '_3d');
+    const biomeNoise = makeNoise(worldSeed + '_massive_biome');
+    const islandNoise = makeNoise(worldSeed + '_massive_island');
+    const cx = parseInt(chunkKey.split(':')[1]);
+    const cz = parseInt(chunkKey.split(':')[2]);
+    const baseX = cx * CHUNK_SIZE;
+    const baseZ = cz * CHUNK_SIZE;
+    // Seeding for deterministic features (trees)
+    const chunkRnd = makeSeededRandom(chunkKey);
+
+    // Massive terrain parameters
+    const mountainScale = 200;
+    const heightAmplitude = 160;
+    const baseHeight = 64;
+
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+            const wx = baseX + lx;
+            const wz = baseZ + lz;
+
+            const nx = wx / mountainScale;
+            const nz = wz / mountainScale;
+
+            // Determine Floating Island Zones
+            // Scale 600 ensures regions are roughly 300-600 blocks wide
+            const islandVal = fbm(islandNoise, wx / 600, wz / 600, 2, 0.5);
+            const isFloatingIsland = islandVal > 0.4;
+
+            if (isFloatingIsland) {
+                 // Floating Island Generation (Void at bottom)
+                 // Use 3D noise to form islands
+                 for (let y = 0; y < MAX_HEIGHT; y++) {
+                     // Void condition: No blocks at very bottom (0-30)
+                     if (y < 40) continue;
+
+                     // Fade density at top and bottom of the "island zone"
+                     // Center around Y=128
+                     let density = fbm3d(noise3d, wx / 50, y / 40, wz / 50, 3, 0.5);
+
+                     // Bias density to be higher in the middle heights (60-200)
+                     let heightBias = 1.0 - Math.abs(y - 128) / 80.0;
+                     if (heightBias < 0) heightBias = 0;
+
+                     density += heightBias * 0.5;
+
+                     let id = BLOCK_AIR;
+                     if (density > 0.75) {
+                         id = 4; // Stone core
+                         // Surface logic for islands
+                         // Simple approximation: check slightly above for air (not perfect in single pass loop but works for noise)
+                         // Better: use density gradient or just y-based layers relative to island surface?
+                         // For now, simple top-down grass is hard without 2 passes or heightmap.
+                         // We'll just use noise texture:
+                         if (density < 0.80) id = 3; // Dirt near edges
+                         if (density < 0.78) id = 2; // Grass at very edges/surface
+                     }
+
+                     // Extensive cave system (Applied to islands too)
+                     const cnx = wx / 40.0;
+                     const cny = y / 40.0;
+                     const cnz = wz / 40.0;
+
+                     const caveNoise = fbm3d(noise3d, cnx, cny, cnz, 2, 0.5);
+
+                     if (y > 5 && caveNoise > 0.60) {
+                         id = BLOCK_AIR;
+                     }
+
+                     if (id !== BLOCK_AIR) {
+                         chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = id;
+                     }
+                 }
+            } else {
+                // Massive Mountains / Standard Massive Terrain
+                let h = fbm(noise, nx, nz, 6, 0.5);
+                let height = baseHeight + (h - 0.3) * heightAmplitude;
+                height = Math.max(5, Math.min(MAX_HEIGHT - 1, height));
+
+                // Pick full biome using standard logic
+                // Calculate independent biome value for diversity
+                // Scale 600 ensures biomes are large (300-1000 blocks)
+                const biomeVal = fbm(biomeNoise, wx / 600, wz / 600, 2, 0.5);
+                const normalizedBiomeVal = (biomeVal + 1) / 2;
+
+                // Use modified biomes logic similar to standard generation for variety
+                // We reuse the global BIOMES array
+                const biome = pickBiome(normalizedBiomeVal, BIOMES, archetype);
+
+                let surfaceBlock = biome.palette[0]; // Primary surface (e.g., Grass, Sand)
+                let subSurfaceBlock = biome.palette[1]; // Secondary (e.g., Dirt, Sandstone)
+
+                // Special handling for mountain peaks in massive terrain
+                if (height > 180) {
+                    surfaceBlock = 10; // Snow
+                    subSurfaceBlock = 10;
+                } else if (height > 150 && biome.key !== 'snow') {
+                    surfaceBlock = 4; // Stone (exposed rock)
+                    subSurfaceBlock = 4;
+                }
+
+                for (let y = 0; y <= height; y++) {
+                    let id = 4; // Stone
+                    if (y === 0) id = 1; // Bedrock
+                    else if (y > height - 4) id = subSurfaceBlock;
+                    if (y === Math.floor(height)) id = surfaceBlock;
+
+                    // Extensive cave system
+                    const cnx = wx / 40.0;
+                    const cny = y / 40.0;
+                    const cnz = wz / 40.0;
+
+                    const caveNoise = fbm3d(noise3d, cnx, cny, cnz, 2, 0.5);
+
+                    if (y > 5 && caveNoise > 0.60) {
+                        id = BLOCK_AIR;
+                    }
+
+                    if (id !== BLOCK_AIR) {
+                        chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = id;
+                    }
+                }
+
+                // Water filling for non-floating areas
+                if (height < SEA_LEVEL) {
+                     for (let y = Math.floor(height) + 1; y <= SEA_LEVEL; y++) {
+                         const index = y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx;
+                         if (chunkData[index] === BLOCK_AIR) {
+                             chunkData[index] = 6;
+                         }
+                     }
+                 }
+
+                 // Flora Placement
+                 // We only place flora if we are on the surface (height) and above sea level
+                 if (height > SEA_LEVEL) {
+                     const cy = Math.floor(height) + 1;
+
+                     // Use biome specific rules
+                     if (biome.key === 'forest' && chunkRnd() < 0.02) {
+                         placeTree(chunkData, lx, cy, lz, chunkRnd);
+                     } else if (biome.key === 'plains' && chunkRnd() < 0.05) {
+                         placeFlower(chunkData, lx, cy, lz, wx, wz);
+                     } else if (biome.key === 'desert' && chunkRnd() < 0.01) {
+                         placeCactus(chunkData, lx, cy, lz, chunkRnd);
+                     } else if (biome.key === 'swamp' && chunkRnd() < 0.01) {
+                         // Swamps might get trees too
+                         placeTree(chunkData, lx, cy, lz, chunkRnd);
+                     }
+                 }
+            }
+        }
+    }
+}
+
 function generateChunkData(chunkKey) {
         const worldSeed = chunkKey.split(':')[0];
         const archetype = selectArchetype(worldSeed);
@@ -466,6 +670,9 @@ function generateChunkData(chunkKey) {
                 break;
             case 'generateDesertTerrain':
                 generateDesertTerrain(chunkData, chunkKey, archetype);
+                break;
+            case 'generateMassiveTerrain':
+                generateMassiveTerrain(chunkData, chunkKey, archetype);
                 break;
             default:
                 generateStandardTerrain(chunkData, chunkKey, archetype);
