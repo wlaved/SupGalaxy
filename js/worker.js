@@ -2,7 +2,7 @@
 const CHUNK_SIZE = 16;
 const MAX_HEIGHT = 256;
 const SEA_LEVEL = 16;
-const MAP_SIZE = 16384;
+const MAP_SIZE = 1000000;
 const BLOCK_AIR = 0;
 
 const ARCHETYPES = {
@@ -666,6 +666,7 @@ function generateMassiveTerrain(chunkData, chunkKey, archetype) {
                     if (y > islandBase && y < islandBase + islandThick) {
                         block = (y === Math.floor(islandBase + islandThick)) ? B_GRASS : B_STONE;
                     }
+                    // Else block remains AIR (Void)
                 } else {
                     // STANDARD TERRAIN
                     if (y === 0) {
