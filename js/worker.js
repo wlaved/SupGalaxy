@@ -47,8 +47,8 @@ const ARCHETYPES = {
         gravity: 30.0,
         skyType: 'earth',
         mobSpawnRules: { day: [], night: ['bee', 'crawley'] },
-        terrainGenerator: 'generateStandardTerrain',
-        biomeModifications: { largeBiomes: true },
+        terrainGenerator: 'generateMassiveTerrain',
+        biomeModifications: {},
         flora: ['trees', 'flowers', 'hives']
     }
 };
@@ -104,6 +104,178 @@ const BIOMES = [
         { key: 'mountain', palette: [4, 11, 3, 15, 1], heightScale: 10.5, roughness: 0.6, featureDensity: 0.01 },
         { key: 'swamp', palette: [2, 3, 6, 14, 13], heightScale: 0.5, roughness: 0.2, featureDensity: 0.04 },
 ];
+
+// --- SIMPLEX NOISE ---
+class SimplexNoise {
+    constructor(seed = Math.random()) {
+        this.p = new Uint8Array(256);
+        this.perm = new Uint8Array(512);
+        this.permMod12 = new Uint8Array(512);
+        for (let i = 0; i < 256; i++) this.p[i] = i;
+        for (let i = 0; i < 256; i++) {
+            let r = i + ~~(seed * (256 - i));
+            let temp = this.p[i]; this.p[i] = this.p[r]; this.p[r] = temp;
+            this.perm[i] = this.perm[i + 256] = this.p[i];
+            this.permMod12[i] = this.permMod12[i + 256] = this.p[i] % 12;
+        }
+        this.grad3 = new Float32Array([1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1, 0, 1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, -1, 0, 1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1]);
+    }
+    dot(g, x, y) { return g[0] * x + g[1] * y; }
+    dot3(g, x, y, z) { return g[0] * x + g[1] * y + g[2] * z; }
+    noise2D(xin, yin) {
+        let n0, n1, n2;
+        const F2 = 0.5 * (Math.sqrt(3.0) - 1.0);
+        const G2 = (3.0 - Math.sqrt(3.0)) / 6.0;
+        let s = (xin + yin) * F2;
+        let i = Math.floor(xin + s);
+        let j = Math.floor(yin + s);
+        let t = (i + j) * G2;
+        let X0 = i - t; let Y0 = j - t;
+        let x0 = xin - X0; let y0 = yin - Y0;
+        let i1, j1;
+        if (x0 > y0) { i1 = 1; j1 = 0; } else { i1 = 0; j1 = 1; }
+        let x1 = x0 - i1 + G2; let y1 = y0 - j1 + G2;
+        let x2 = x0 - 1.0 + 2.0 * G2; let y2 = y0 - 1.0 + 2.0 * G2;
+        let ii = i & 255; let jj = j & 255;
+        let gi0 = this.permMod12[ii + this.perm[jj]] * 3;
+        let t0 = 0.5 - x0 * x0 - y0 * y0;
+        if (t0 < 0) n0 = 0.0; else { t0 *= t0; n0 = t0 * t0 * this.dot([this.grad3[gi0], this.grad3[gi0 + 1]], x0, y0); }
+        let gi1 = this.permMod12[ii + i1 + this.perm[jj + j1]] * 3;
+        let t1 = 0.5 - x1 * x1 - y1 * y1;
+        if (t1 < 0) n1 = 0.0; else { t1 *= t1; n1 = t1 * t1 * this.dot([this.grad3[gi1], this.grad3[gi1 + 1]], x1, y1); }
+        let gi2 = this.permMod12[ii + 1 + this.perm[jj + 1]] * 3;
+        let t2 = 0.5 - x2 * x2 - y2 * y2;
+        if (t2 < 0) n2 = 0.0; else { t2 *= t2; n2 = t2 * t2 * this.dot([this.grad3[gi2], this.grad3[gi2 + 1]], x2, y2); }
+        return 70.0 * (n0 + n1 + n2);
+    }
+    noise3D(xin, yin, zin) {
+        let n0, n1, n2, n3;
+        const F3 = 1.0 / 3.0;
+        const G3 = 1.0 / 6.0;
+        let s = (xin + yin + zin) * F3;
+        let i = Math.floor(xin + s);
+        let j = Math.floor(yin + s);
+        let k = Math.floor(zin + s);
+        let t = (i + j + k) * G3;
+        let X0 = i - t; let Y0 = j - t; let Z0 = k - t;
+        let x0 = xin - X0; let y0 = yin - Y0; let z0 = zin - Z0;
+        let i1, j1, k1; let i2, j2, k2;
+        if (x0 >= y0) { if (y0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 1; k2 = 0; } else if (x0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 0; k2 = 1; } else { i1 = 0; j1 = 0; k1 = 1; i2 = 1; j2 = 0; k2 = 1; } } else { if (y0 < z0) { i1 = 0; j1 = 0; k1 = 1; i2 = 0; j2 = 1; k2 = 1; } else if (x0 < z0) { i1 = 0; j1 = 1; k1 = 0; i2 = 0; j2 = 1; k2 = 1; } else { i1 = 0; j1 = 1; k1 = 0; i2 = 1; j2 = 1; k2 = 0; } }
+        let x1 = x0 - i1 + G3; let y1 = y0 - j1 + G3; let z1 = z0 - k1 + G3;
+        let x2 = x0 - i2 + 2.0 * G3; let y2 = y0 - j2 + 2.0 * G3; let z2 = z0 - k2 + 2.0 * G3;
+        let x3 = x0 - 1.0 + 3.0 * G3; let y3 = y0 - 1.0 + 3.0 * G3; let z3 = z0 - 1.0 + 3.0 * G3;
+        let ii = i & 255; let jj = j & 255; let kk = k & 255;
+        let gi0 = this.permMod12[ii + this.perm[jj + this.perm[kk]]] * 3;
+        let t0 = 0.6 - x0 * x0 - y0 * y0 - z0 * z0;
+        if (t0 < 0) n0 = 0.0; else { t0 *= t0; n0 = t0 * t0 * this.dot3([this.grad3[gi0], this.grad3[gi0 + 1], this.grad3[gi0 + 2]], x0, y0, z0); }
+        let gi1 = this.permMod12[ii + i1 + this.perm[jj + j1 + this.perm[kk + k1]]] * 3;
+        let t1 = 0.6 - x1 * x1 - y1 * y1 - z1 * z1;
+        if (t1 < 0) n1 = 0.0; else { t1 *= t1; n1 = t1 * t1 * this.dot3([this.grad3[gi1], this.grad3[gi1 + 1], this.grad3[gi1 + 2]], x1, y1, z1); }
+        let gi2 = this.permMod12[ii + i2 + this.perm[jj + j2 + this.perm[kk + k2]]] * 3;
+        let t2 = 0.6 - x2 * x2 - y2 * y2 - z2 * z2;
+        if (t2 < 0) n2 = 0.0; else { t2 *= t2; n2 = t2 * t2 * this.dot3([this.grad3[gi2], this.grad3[gi2 + 1], this.grad3[gi2 + 2]], x2, y2, z2); }
+        let gi3 = this.permMod12[ii + 1 + this.perm[jj + 1 + this.perm[kk + 1]]] * 3;
+        let t3 = 0.6 - x3 * x3 - y3 * y3 - z3 * z3;
+        if (t3 < 0) n3 = 0.0; else { t3 *= t3; n3 = t3 * t3 * this.dot3([this.grad3[gi3], this.grad3[gi3 + 1], this.grad3[gi3 + 2]], x3, y3, z3); }
+        return 32.0 * (n0 + n1 + n2 + n3);
+    }
+}
+
+// --- MASSIVE WORLD CONSTANTS ---
+const MASSIVE_BIOME = {
+    OCEAN: 0,
+    BEACH: 1,
+    PLAINS: 2,
+    FOREST: 3,
+    MOUNTAINS: 4,
+    DESERT: 5,
+    VOLCANO: 6,
+    FLOATING_ISLANDS: 7,
+    BADLANDS: 8,
+    TUNDRA: 9
+};
+
+const MASSIVE_CAVE = {
+    NORMAL: 0,
+    LUSH: 1,
+    GLOWING_MUSHROOM: 2,
+    MAGMA: 3
+};
+
+const massiveNoiseCache = new Map();
+
+function getMassiveNoises(worldSeed) {
+    if (massiveNoiseCache.has(worldSeed)) return massiveNoiseCache.get(worldSeed);
+    const rng = makeSeededRandom(worldSeed + '_massive');
+    const noises = {
+        elevation: new SimplexNoise(rng()),
+        moisture: new SimplexNoise(rng()),
+        temperature: new SimplexNoise(rng()),
+        cave: new SimplexNoise(rng()),
+        island: new SimplexNoise(rng()),
+        caveBiome: new SimplexNoise(rng())
+    };
+    massiveNoiseCache.set(worldSeed, noises);
+    return noises;
+}
+
+function getMassiveBiome(x, z, noises) {
+    let temp = noises.temperature.noise2D(x * 0.0005, z * 0.0005);
+    let moist = noises.moisture.noise2D(x * 0.0005, z * 0.0005);
+    let magic = noises.island.noise2D(x * 0.001, z * 0.001);
+
+    if (magic > 0.75) return MASSIVE_BIOME.FLOATING_ISLANDS;
+
+    if (temp > 0.7 && moist < -0.5) return MASSIVE_BIOME.BADLANDS;
+    if (temp > 0.6 && moist < -0.2) return MASSIVE_BIOME.VOLCANO;
+    if (temp < -0.5) return MASSIVE_BIOME.TUNDRA;
+
+    if (temp < -0.2) return MASSIVE_BIOME.MOUNTAINS;
+    if (moist > 0.3) return MASSIVE_BIOME.FOREST;
+    if (temp > 0.3 && moist < 0) return MASSIVE_BIOME.DESERT;
+
+    let heightVal = noises.elevation.noise2D(x * 0.002, z * 0.002);
+    if (heightVal < -0.4) return MASSIVE_BIOME.OCEAN;
+
+    return MASSIVE_BIOME.PLAINS;
+}
+
+function getMassiveTerrainHeight(x, z, biome, noises) {
+    let n1 = noises.elevation.noise2D(x * 0.003, z * 0.003);
+    let n2 = noises.elevation.noise2D(x * 0.01, z * 0.01) * 0.5;
+    let combined = n1 + n2;
+
+    switch (biome) {
+        case MASSIVE_BIOME.OCEAN: return 40 + (combined * 20);
+        case MASSIVE_BIOME.DESERT: return 65 + (Math.abs(n2) * 15);
+        case MASSIVE_BIOME.MOUNTAINS: return 90 + (Math.abs(combined) * 120);
+        case MASSIVE_BIOME.VOLCANO:
+            let v = Math.abs(noises.temperature.noise2D(x * 0.004, z * 0.004));
+            return 70 + (v * v * 160);
+        case MASSIVE_BIOME.BADLANDS:
+            let p = Math.abs(combined);
+            if (p > 0.5) return 100;
+            if (p > 0.2) return 85;
+            return 65;
+        case MASSIVE_BIOME.TUNDRA: return 65 + (combined * 10);
+        case MASSIVE_BIOME.FLOATING_ISLANDS: return 0;
+        default: return 60 + (combined * 15);
+    }
+}
+
+function getMassiveCaveBiome(x, y, z, noises) {
+    let n = noises.caveBiome.noise3D(x * 0.005, y * 0.005, z * 0.005);
+    if (y < 20 && n > 0.5) return MASSIVE_CAVE.MAGMA;
+    if (n > 0.6) return MASSIVE_CAVE.GLOWING_MUSHROOM;
+    if (n < -0.6) return MASSIVE_CAVE.LUSH;
+    return MASSIVE_CAVE.NORMAL;
+}
+
+function isMassiveCave(x, y, z, noises) {
+    let val = noises.cave.noise3D(x * 0.015, y * 0.02, z * 0.015);
+    let depthBonus = Math.max(0, (80 - y) / 100);
+    return (val + depthBonus) > 0.55;
+}
 
 function makeSeededRandom(seed) {
         var h = 2166136261 >>> 0;
@@ -447,6 +619,110 @@ function generateDesertTerrain(chunkData, chunkKey, archetype) {
     generateStandardTerrain(chunkData, chunkKey, archetype);
 }
 
+function generateMassiveTerrain(chunkData, chunkKey, archetype) {
+    const worldSeed = chunkKey.split(':')[0];
+    const noises = getMassiveNoises(worldSeed);
+    const cx = parseInt(chunkKey.split(':')[1]);
+    const cz = parseInt(chunkKey.split(':')[2]);
+    const baseX = cx * CHUNK_SIZE;
+    const baseZ = cz * CHUNK_SIZE;
+
+    // Block Mapping
+    const B_BEDROCK = 1;
+    const B_GRASS = 2;
+    const B_DIRT = 3;
+    const B_STONE = 4;
+    const B_SAND = 5;
+    const B_WATER = 6;
+    const B_SNOW = 10;
+    const B_COAL = 11;
+    const B_LAVA = 16;
+    const B_ICE = 17;
+    const B_BRICK = 105;
+    const B_OBSIDIAN = 110;
+    const B_CRYSTAL_GREEN = 113; // Glow Mushroom
+    const B_GLOW_BRICK = 115;
+    const B_SANDSTONE = 118;
+    const B_GRAVEL = 15;
+    const B_MOSS = 14;
+
+    for (let lx = 0; lx < CHUNK_SIZE; lx++) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz++) {
+            const wx = baseX + lx;
+            const wz = baseZ + lz;
+
+            let biome = getMassiveBiome(wx, wz, noises);
+            let height = Math.floor(getMassiveTerrainHeight(wx, wz, biome, noises));
+            const SEA_LEVEL = 55;
+
+            // Generate full column
+            for (let y = 0; y < MAX_HEIGHT; y++) {
+                let block = 0; // Air
+
+                // FLOATING ISLANDS
+                if (biome === MASSIVE_BIOME.FLOATING_ISLANDS) {
+                    let islandBase = 120 + (noises.island.noise2D(wx * 0.02, wz * 0.02) * 10);
+                    let islandThick = 10 + (noises.island.noise2D(wx * 0.05, wz * 0.05) * 20);
+                    if (y > islandBase && y < islandBase + islandThick) {
+                        block = (y === Math.floor(islandBase + islandThick)) ? B_GRASS : B_STONE;
+                    }
+                } else {
+                    // STANDARD TERRAIN
+                    if (y === 0) {
+                        block = B_BEDROCK;
+                    } else if (y < height - 4 && y > 0) {
+                        // Caves
+                        if (biome !== MASSIVE_BIOME.OCEAN && isMassiveCave(wx, y, wz, noises)) {
+                             block = 0; // Cave air
+                        } else {
+                            // Cave decoration / Underground
+                            let caveType = getMassiveCaveBiome(wx, y, wz, noises);
+                            if (caveType === MASSIVE_CAVE.GLOWING_MUSHROOM) {
+                                if (Math.random() > 0.95) block = B_CRYSTAL_GREEN;
+                                else block = B_MOSS;
+                            } else if (caveType === MASSIVE_CAVE.MAGMA) {
+                                if (Math.random() > 0.9) block = B_LAVA;
+                                else block = B_OBSIDIAN;
+                            } else {
+                                block = B_STONE;
+                            }
+                        }
+                    } else if (y > height) {
+                        // Liquids
+                         if (y < SEA_LEVEL) {
+                            if (biome === MASSIVE_BIOME.TUNDRA) block = B_ICE;
+                            else block = B_WATER;
+                        } else if (biome === MASSIVE_BIOME.VOLCANO && y < height + 5 && y > 150) {
+                            block = B_LAVA;
+                        }
+                    } else if (y === height) {
+                        // Surface
+                        if (biome === MASSIVE_BIOME.DESERT) block = B_SAND;
+                        else if (biome === MASSIVE_BIOME.BADLANDS) block = B_SANDSTONE; // Red sand approx
+                        else if (biome === MASSIVE_BIOME.VOLCANO) block = B_GRAVEL; // Ash
+                        else if (biome === MASSIVE_BIOME.TUNDRA) block = B_SNOW;
+                        else if (biome === MASSIVE_BIOME.MOUNTAINS && y > 110) block = B_SNOW;
+                        else if (y < SEA_LEVEL + 2 && biome !== MASSIVE_BIOME.VOLCANO && biome !== MASSIVE_BIOME.BADLANDS) block = B_SAND;
+                        else block = B_GRASS;
+                    } else if (y > height - 5) {
+                        // Subsurface
+                        if (biome === MASSIVE_BIOME.BADLANDS) block = B_BRICK; // Terracotta
+                        else if (biome === MASSIVE_BIOME.VOLCANO) block = B_OBSIDIAN;
+                        else if (biome === MASSIVE_BIOME.DESERT) block = B_SAND;
+                        else block = B_DIRT;
+                    } else {
+                        // Deep filler
+                        if (biome === MASSIVE_BIOME.VOLCANO && Math.random() > 0.98) block = B_LAVA;
+                        else block = B_STONE;
+                    }
+                }
+
+                chunkData[y * CHUNK_SIZE * CHUNK_SIZE + lz * CHUNK_SIZE + lx] = block;
+            }
+        }
+    }
+}
+
 function generateChunkData(chunkKey) {
         const worldSeed = chunkKey.split(':')[0];
         const archetype = selectArchetype(worldSeed);
@@ -466,6 +742,9 @@ function generateChunkData(chunkKey) {
                 break;
             case 'generateDesertTerrain':
                 generateDesertTerrain(chunkData, chunkKey, archetype);
+                break;
+            case 'generateMassiveTerrain':
+                generateMassiveTerrain(chunkData, chunkKey, archetype);
                 break;
             default:
                 generateStandardTerrain(chunkData, chunkKey, archetype);
